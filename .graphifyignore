@@ -1,0 +1,6 @@
+# Nur den Spielcode in den Wissensgraphen aufnehmen
+.claude/
+CLAUDE.md
+docs/
+data/
+graphify-out/

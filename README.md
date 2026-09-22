@@ -277,11 +277,47 @@ assets/js/core.js      Konstanten, Mathe-Helfer, synthetischer Sound
 assets/js/level.js     Kachelgitter, Bauteil-Physik, bewegliche Gefahren
 assets/js/player.js    Steuerung und Plattformer-Physik der Figur
 assets/js/render.js    Komplettes Zeichnen auf die Canvas
-assets/js/input.js     Tastatur und Maus, drei Tastenbelegungen
+assets/js/input.js     Tastatur und Maus, vier Tastenbelegungen
 assets/js/net.js       Polling-Transport für den Online-Modus
 assets/js/game.js      Phasenmaschine, HUD, Spielschleife
 data/rooms/            Laufzeitdaten der Online-Räume (wird ignoriert von git)
 ```
+
+## Graphify (Wissensgraph für Claude Code)
+
+Das Repo ist für [Graphify](https://github.com/Graphify-Labs/graphify) vorbereitet.
+Graphify baut aus dem Code einen Wissensgraphen (Dateien, Klassen, Funktionen,
+Aufrufe), den Claude Code abfragt, statt viele Dateien einzeln zu lesen. Für PHP
+und JavaScript läuft das komplett lokal, ohne API-Key.
+
+```
+.claude/skills/graphify/        Der /graphify-Skill für Claude Code
+.claude/settings.json           Hooks: erinnern Claude daran, zuerst den Graphen zu fragen
+.claude/hooks/session-start.sh  Cloud-Sitzungen: installiert Graphify, baut den Graphen
+CLAUDE.md                       Regeln für Claude: query/path/explain, danach graphify update
+.graphifyignore                 Nur der Spielcode kommt in den Graphen
+```
+
+Der Graph selbst (`graphify-out/`) wird nicht eingecheckt, sondern neu gebaut.
+
+**Lokal einrichten (einmalig, Python 3.10+ nötig):**
+
+```bash
+curl -LsSf https://astral.sh/uv/install.sh | sh   # Windows: powershell -ExecutionPolicy ByPass -c "irm https://astral.sh/uv/install.ps1 | iex"
+uv tool install graphifyy                          # Paketname mit zwei y
+graphify update .                                  # Graphen bauen, dauert ~2 Sekunden
+graphify hook install                              # optional: nach jedem Commit neu bauen
+```
+
+Danach einfach Claude fragen, oder direkt: `graphify query "Wie wird ein Kill
+gewertet?"`, `graphify explain "Levels::parseMap"`, `graphify path "A" "B"`.
+`graphify-out/graph.html` zeigt den Graphen im Browser. Solange Graphify lokal
+fehlt, meldet Claude Code bei Dateizugriffen einen harmlosen Hook-Fehler.
+
+**Grenze:** Methoden in Objekt-Literalen (`var Game = { update: function () … }`)
+erkennt Graphify nicht. `game.js`, `render.js`, `core.js` und `input.js`
+erscheinen deshalb nur als einzelne Knoten; die PHP-Klassen, `level.js` und
+`player.js` sind vollständig erfasst.
 
 ## Bewusste Abweichungen vom Original
 

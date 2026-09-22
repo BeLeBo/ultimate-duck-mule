@@ -6,3 +6,6 @@
 *.swp
 .idea/
 .vscode/
+
+# Graphify-Ausgabe (wird lokal bzw. beim Sitzungsstart neu gebaut)
+graphify-out/
