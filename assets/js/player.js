@@ -395,6 +395,12 @@
       return this.finish(level);
     }
 
+    // In der Startzone kann einem nichts passieren - weder Pendel noch
+    // Pfeil noch Saege.
+    if (level.inSafeZone(this.centerX(), this.centerY())) {
+      return null;
+    }
+
     for (i = 0; i < level.hazards.length; i++) {
       var hazard = level.hazards[i];
       if (hazard.cell && hazard.cell.broken) { continue; }

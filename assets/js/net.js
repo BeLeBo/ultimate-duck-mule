@@ -1,5 +1,5 @@
 /* Online-Transport: schlichtes Polling gegen api/index.php.
- * Kein WebSocket, weil nur PHP erlaubt ist - fuer drei Spieler reicht das. */
+ * Kein WebSocket, weil nur PHP erlaubt ist - fuer vier Spieler reicht das. */
 (function (global) {
   'use strict';
 
@@ -46,9 +46,16 @@
     });
   };
 
-  /** Zustand holen und dabei die eigene Position melden. */
-  Net.prototype.sync = function (pos) {
-    return this.call('state', pos ? { pos: pos } : {});
+  /**
+   * Zustand holen und dabei mitschicken, was die anderen sehen sollen:
+   * in der Partyphase die eigene Position, in der Bauphase (wenn man dran
+   * ist) Mauszeiger, Karte und Drehung.
+   */
+  Net.prototype.sync = function (pos, build) {
+    var payload = {};
+    if (pos) { payload.pos = pos; }
+    if (build) { payload.build = build; }
+    return this.call('state', payload);
   };
 
   Net.prototype.leave = function () {

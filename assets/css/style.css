@@ -467,3 +467,73 @@ label { display: block; font-size: 13px; color: var(--muted); margin-bottom: 5px
 /* Overlay: Knopf braucht Abstand nach oben und unten */
 .overlay .panel .big { margin: 6px 0 4px; }
 .overlay .panel .big + p { margin-top: 12px; margin-bottom: 0; }
+
+/* Weltauswahl mit Vorschaubildern */
+.level-picker {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(128px, 1fr));
+  gap: 8px;
+  margin-bottom: 14px;
+}
+.lvl {
+  display: flex;
+  flex-direction: column;
+  gap: 5px;
+  padding: 6px;
+  border-radius: 10px;
+  background: rgba(0, 0, 0, 0.25);
+  border: 2px solid var(--line);
+  color: var(--text);
+  box-shadow: none;
+  font-weight: 700;
+  font-size: 12px;
+  text-align: center;
+}
+.lvl:hover:not([disabled]) { border-color: rgba(255, 255, 255, 0.3); }
+/* Auswahl muss auch unter dem Mauszeiger gewinnen (Hover-Regel ist spezifischer). */
+.lvl.on,
+.lvl.on:hover:not([disabled]) { border-color: var(--accent); background: rgba(255, 203, 61, 0.16); }
+.lvl-thumb {
+  display: block;
+  width: 100%;
+  aspect-ratio: 40 / 23;
+  border-radius: 6px;
+  background: #0e1030;
+}
+.lvl-random {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 34px;
+  font-weight: 900;
+  color: var(--accent);
+  background: repeating-linear-gradient(45deg, rgba(255,255,255,0.05) 0 10px, rgba(255,255,255,0.1) 10px 20px);
+}
+.lvl-name { line-height: 1.2; }
+
+/* Power-up-Karten, Zug beenden, Zuschaueransicht */
+.card.power {
+  border-color: rgba(190, 140, 255, 0.55);
+  background: linear-gradient(180deg, rgba(150, 100, 255, 0.22), rgba(0, 0, 0, 0.3));
+}
+.card.power.selected { border-color: #c9a2ff; background: rgba(170, 120, 255, 0.35); }
+.card.power .ckey { color: #d9c2ff; }
+.card.endturn .rot-icon { color: var(--muted); font-size: 22px; }
+.card.spectate { cursor: default; opacity: 0.92; }
+.card.spectate.selected { transform: translateY(-3px); }
+.spectate-note {
+  align-self: center;
+  padding: 8px 12px;
+  border-radius: 10px;
+  background: rgba(255, 255, 255, 0.06);
+  font-size: 13px;
+  color: var(--muted);
+}
+
+/* Lobby mit Weltauswahl */
+.overlay.lobby-overlay .panel { max-width: 760px; }
+.lobby-label { text-align: left; margin-top: 4px; }
+.lobby-picker { grid-template-columns: repeat(auto-fill, minmax(104px, 1fr)); text-align: left; }
+.lobby-picker .lvl { font-size: 11px; }
+#lobby-target { max-width: 140px; margin-bottom: 16px; display: block; }
+.lobby-settings { margin: 0 0 16px; }

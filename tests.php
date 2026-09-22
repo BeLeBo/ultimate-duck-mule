@@ -14,6 +14,168 @@ require_once __DIR__ . '/lib/View.php';
 
 require_once __DIR__ . '/lib/Game.php';
 
+// ------------------------------------------------------------ Serverregeln
+// Diese Pruefungen laufen direkt in PHP gegen lib/Game.php, lib/Cards.php und
+// lib/Levels.php und erscheinen in derselben Ergebnisliste.
+$serverChecks = [];
+$serverCheck = static function (string $name, bool $ok, string $detail = '') use (&$serverChecks): void {
+    $serverChecks[] = ['name' => $name, 'ok' => $ok, 'detail' => $detail];
+};
+
+$makeRoom = static function (array $names): array {
+    $room = Game::newRoom('TEST', 10, 'wiese');
+    foreach ($names as $name) {
+        Game::addPlayer($room, $name, '');
+    }
+    foreach ($room['players'] as &$player) {
+        $player['lastSeen'] = time();
+    }
+    unset($player);
+
+    return $room;
+};
+$tokenOf = static function (array $room, string $name): string {
+    foreach ($room['players'] as $token => $player) {
+        if ($player['name'] === $name) {
+            return $token;
+        }
+    }
+
+    return '';
+};
+
+// Vier Spieler passen hinein, der fuenfte nicht.
+$room = $makeRoom(['A', 'B', 'C', 'D']);
+$fifth = '';
+try {
+    Game::addPlayer($room, 'E', '');
+} catch (RuntimeException $e) {
+    $fifth = $e->getMessage();
+}
+$serverCheck('Raum nimmt vier Spieler auf, den fünften nicht', count($room['order']) === 4 && $fifth !== '', $fifth);
+
+// Bau-Reihenfolge nach Punkten.
+$room = $makeRoom(['Anna', 'Bo', 'Cem', 'Dana']);
+$scores = ['Anna' => 3, 'Bo' => 7, 'Cem' => 3, 'Dana' => 1];
+foreach ($room['players'] as &$player) {
+    $player['score'] = $scores[$player['name']];
+}
+unset($player);
+$orders = [];
+for ($i = 0; $i < 60; $i++) {
+    $orders[implode('>', array_map(static fn ($t) => $room['players'][$t]['name'], Game::buildOrder($room)))] = true;
+}
+$serverCheck('Bau-Reihenfolge: Führender zuerst, Gleichstand ausgelost',
+    array_keys($orders) == ['Bo>Anna>Cem>Dana', 'Bo>Cem>Anna>Dana'] || array_keys($orders) == ['Bo>Cem>Anna>Dana', 'Bo>Anna>Cem>Dana'],
+    implode(' | ', array_keys($orders)));
+
+// Kartenziehen: immer genug Bauteile.
+$badHands = 0;
+$withPower = 0;
+for ($i = 0; $i < 500; $i++) {
+    $hand = Cards::deal(4);
+    $blocks = count(array_filter($hand, static fn ($c) => Cards::exists($c)));
+    $badHands += (count($hand) !== 4 || $blocks < 3) ? 1 : 0;
+    $withPower += $blocks === 3 ? 1 : 0;
+}
+$serverCheck('Jede Hand hat vier Karten, davon mindestens drei Bauteile',
+    $badHands === 0 && $withPower > 100 && $withPower < 320,
+    '500 Hände, Power-up in ' . round($withPower / 5) . ' %');
+
+// Power-ups.
+$room = $makeRoom(['Anna', 'Bo']);
+Game::startMatch($room, $tokenOf($room, 'Anna'));
+$builder = Game::currentBuilder($room);
+$room['players'][$builder]['hand'] = ['stone', 'pu_extra', 'pu_remove', 'pu_bomb'];
+$room['blocks'] = [
+    ['id' => 50, 'type' => 'stone', 'x' => 12, 'y' => 14, 'rot' => 0, 'ownerSlot' => 1],
+    ['id' => 51, 'type' => 'beam', 'x' => 13, 'y' => 15, 'rot' => 0, 'ownerSlot' => 1],
+    ['id' => 52, 'type' => 'stone', 'x' => 30, 'y' => 10, 'rot' => 0, 'ownerSlot' => 1],
+];
+Game::usePower($room, $builder, 1, -1, -1);
+Game::usePower($room, $builder, 1, -1, -1);
+$serverCheck('Doppelbau und Abrissbirne erhöhen das Kontingent',
+    $room['players'][$builder]['places'] === 2 && $room['players'][$builder]['removes'] === 2,
+    'Bauteile ' . $room['players'][$builder]['places'] . ', Löschungen ' . $room['players'][$builder]['removes']);
+$emptyBlast = '';
+try {
+    Game::usePower($room, $builder, 1, 2, 2);
+} catch (RuntimeException $e) {
+    $emptyBlast = $e->getMessage();
+}
+Game::usePower($room, $builder, 1, 12, 15);
+$serverCheck('Sprengladung räumt das 3×3-Feld und hinterlässt Grabsteine',
+    $emptyBlast !== '' && array_column($room['blocks'], 'id') === [52] && count($room['graves']) === 2,
+    'übrig ' . json_encode(array_column($room['blocks'], 'id')) . ', Grabsteine ' . count($room['graves']));
+$graveError = '';
+try {
+    Game::place($room, $builder, 0, 12, 14, 0);
+} catch (RuntimeException $e) {
+    $graveError = $e->getMessage();
+}
+$serverCheck('Auf einem frischen Grabstein darf derselbe Typ nicht wieder hin',
+    strpos($graveError, 'eben erst') !== false, $graveError);
+
+// Nach dem Match zurueck in die Lobby.
+$room = $makeRoom(['Anna', 'Bo']);
+$host = $tokenOf($room, 'Anna');
+Game::startMatch($room, $host);
+$room['phase'] = 'over';
+$room['blocks'] = [['id' => 1, 'type' => 'stone', 'x' => 10, 'y' => 10, 'rot' => 0, 'ownerSlot' => 0]];
+foreach ($room['players'] as &$player) {
+    $player['score'] = 9;
+}
+unset($player);
+$notHost = '';
+try {
+    Game::backToLobby($room, $tokenOf($room, 'Bo'));
+} catch (RuntimeException $e) {
+    $notHost = $e->getMessage();
+}
+Game::backToLobby($room, $host);
+Game::updateSettings($room, $host, 'vulkan', 12);
+$scoresNow = array_sum(array_column($room['players'], 'score'));
+$serverCheck('Nochmal spielen: Lobby mit neuer Welt, Punkte und Bauteile zurückgesetzt',
+    $notHost !== '' && $room['phase'] === 'lobby' && $room['blocks'] === [] && $scoresNow === 0
+    && $room['levelId'] === 'vulkan' && $room['targetScore'] === 12 && count($room['order']) === 2,
+    'Phase ' . $room['phase'] . ', Welt ' . $room['levelId'] . ', Ziel ' . $room['targetScore']);
+
+// Karten-Parser lehnt kaputte Karten ab.
+$broken = 0;
+$rows = array_fill(0, Levels::ROWS, str_repeat('.', Levels::COLS));
+$rows[20] = str_repeat('#', Levels::COLS);
+$cases = [
+    'zu kurz' => array_replace($rows, [3 => '....']),
+    'ohne Ziel' => array_replace($rows, [19 => 'S' . str_repeat('.', Levels::COLS - 1)]),
+    'zwei Starts' => array_replace($rows, [19 => 'S.S' . str_repeat('.', Levels::COLS - 4) . 'G']),
+    'fremdes Zeichen' => array_replace($rows, [19 => 'S?' . str_repeat('.', Levels::COLS - 3) . 'G']),
+];
+foreach ($cases as $label => $map) {
+    try {
+        Levels::parseMap(['id' => 'x', 'name' => 'x', 'theme' => 'day', 'desc' => '', 'map' => $map]);
+    } catch (LogicException $e) {
+        $broken++;
+    }
+}
+$serverCheck('Karten-Parser lehnt fehlerhafte Welten ab', $broken === count($cases), $broken . ' von ' . count($cases) . ' Fehlern erkannt');
+
+// Grabsteine: der Server entscheidet fuer ein Beispiel, der Client muss zustimmen.
+$graveRoom = ['levelId' => 'wiese', 'round' => 3, 'blocks' => [], 'graves' => [
+    ['type' => 'spike', 'x' => 12, 'y' => 14, 'until' => 4],
+    ['type' => 'beam', 'x' => 20, 'y' => 10, 'until' => 3],
+    ['type' => 'saw', 'x' => 30, 'y' => 10, 'until' => 2],
+]];
+$graveProbes = [];
+foreach ([
+    ['spike', 12, 14], ['stone', 12, 14], ['spike', 13, 14],
+    ['beam', 18, 10], ['beam', 22, 10], ['beam', 23, 10], ['beam', 20, 11],
+    ['saw', 30, 10],
+] as [$type, $x, $y]) {
+    $graveProbes[] = ['type' => $type, 'x' => $x, 'y' => $y,
+        'blocked' => Game::blockedByGrave($graveRoom, $x, $y, $type)];
+}
+$graveActive = Game::activeGraves($graveRoom);
+
 // Vom Server berechnete Sperrflaechen - der Client muss zum selben Ergebnis kommen.
 $blocked = [];
 $bigOk = [];
@@ -66,6 +228,8 @@ foreach (Levels::all() as $level) {
 <script>
 window.UDM_BLOCKED = <?= json_encode($blocked) ?>;
 window.UDM_BIG_OK = <?= json_encode($bigOk) ?>;
+window.UDM_GRAVES = <?= json_encode(['active' => $graveActive, 'probes' => $graveProbes]) ?>;
+window.UDM_SERVER_CHECKS = <?= json_encode($serverChecks, JSON_UNESCAPED_UNICODE) ?>;
 </script>
 <script src="assets/js/core.js"></script>
 <script src="assets/js/level.js"></script>
@@ -544,7 +708,7 @@ window.UDM_BIG_OK = <?= json_encode($bigOk) ?>;
   }());
 
   (function testOwnOilOwnTrap() {
-    // Eigenes Oel, eigene Stacheln: nur ein Eigengoal, kein doppelter Eintrag.
+    // Eigenes Oel, eigene Stacheln: nur ein Eigentor, kein doppelter Eintrag.
     var level = makeLevel(FLAT, [
       block('oil', 10, 17, 0, 1), block('oil', 11, 17, 0, 1),
       block('spike', 13, 17, 0, 1)
@@ -575,6 +739,63 @@ window.UDM_BIG_OK = <?= json_encode($bigOk) ?>;
     check('Aufgeben beendet die eigene Runde ohne Schuldigen',
       !p.alive && p.cause === 'aufgabe' && p.killerSlot === null && p.isDone(),
       'cause=' + p.cause + ', killer=' + p.killerSlot);
+  }());
+
+  /* ---------------------------------------------------- Sichere Startzone */
+  // FLAT: Start bei 2/17 -> Zone Kacheln 1..4 x 15..17
+
+  (function testSafeZoneVsPendulum() {
+    var level = makeLevel(FLAT, [block('wrecker', 3, 13, 0, 1)]);
+    var p = new UDM.Player(0, { name: 'T', char: 'duck' });
+    var spawn = level.spawnPoint(1);
+    p.reset(spawn.x, spawn.y);
+    var run = simulate(p, level, 4, NONE, { keepGoing: true });
+    var swungThrough = level.wreckers[0].length >= 3 * TILE;
+    check('Pendel schwingt durch die Startzone, trifft dort aber niemanden',
+      p.alive && swungThrough,
+      'am Leben=' + p.alive + ', Kette=' + level.wreckers[0].length + 'px');
+  }());
+
+  (function testSafeZoneStopsArrows() {
+    var level = makeLevel(FLAT, [block('arrow', 9, 17, 3, 1)]);
+    var p = new UDM.Player(0, { name: 'T', char: 'duck' });
+    var spawn = level.spawnPoint(0);
+    p.reset(spawn.x, spawn.y);
+    var deepest = 999;
+    for (var i = 0; i < 120 * 4; i++) {
+      level.update(1 / 120, i / 120);
+      p.update(1 / 120, NONE, level);
+      p.checkFate(level);
+      level.projectiles.forEach(function (arrow) { deepest = Math.min(deepest, arrow.x); });
+    }
+    check('Pfeile zerfallen am Rand der Startzone',
+      p.alive && deepest >= 5 * TILE - 20,
+      'am Leben=' + p.alive + ', weitester Pfeil bei x=' + Math.round(deepest) + ' (Zone endet bei ' + (5 * TILE) + ')');
+  }());
+
+  (function testSafeZoneStopsSaw() {
+    var level = makeLevel(FLAT, [block('saw', 6, 16, 1, 1)]);
+    var saw = level.saws[0];
+    var leftmost = saw.mid - saw.amp;
+    check('Sägeschiene endet vor der Startzone',
+      leftmost >= 5 * TILE,
+      'linkes Ende bei x=' + leftmost + ' (Zone endet bei ' + (5 * TILE) + ')');
+  }());
+
+  (function testSafeZoneStopsFan() {
+    var level = makeLevel(FLAT, [block('fan', 6, 17, 3, 1)]);
+    var intoZone = level.streams.filter(function (st) { return level.isSafeTile(st.x / TILE, st.y / TILE); });
+    check('Luftstrom bläst nicht in die Startzone',
+      intoZone.length === 0 && level.streams.length === 1,
+      'Stromkacheln=' + level.streams.length + ', davon in der Zone=' + intoZone.length);
+  }());
+
+  (function testOutsideZoneStillDeadly() {
+    var level = makeLevel(FLAT, [block('arrow', 12, 17, 3, 1)]);
+    var p = makePlayer(8, 17);
+    simulate(p, level, 4, NONE);
+    check('Außerhalb der Startzone treffen Pfeile weiterhin',
+      !p.alive && p.cause === 'pfeil', 'cause=' + p.cause);
   }());
 
   /* --------------------------------------------------- Spielfeldgrenzen */
@@ -827,7 +1048,8 @@ window.UDM_BIG_OK = <?= json_encode($bigOk) ?>;
 
     check('Bauregeln von Client und Server sind identisch',
       mismatches.length === 0,
-      mismatches.length ? mismatches.slice(0, 6).join(' | ') : 'alle 4 Level, 920 Kacheln geprüft');
+      mismatches.length ? mismatches.slice(0, 6).join(' | ')
+        : 'alle ' + levels.length + ' Level, ' + (levels.length * UDM.COLS * UDM.ROWS) + ' Kacheln geprüft');
   }());
 
   (function testBigBlockRulesMatch() {
@@ -857,6 +1079,28 @@ window.UDM_BIG_OK = <?= json_encode($bigOk) ?>;
       mismatches.length ? mismatches.slice(0, 5).join(' | ') : checked + ' Kacheln geprüft');
   }());
 
+  (function testGravesMatchServer() {
+    var data = window.UDM_GRAVES;
+    var level = makeLevel(FLAT);
+    level.graves = data.active;
+    var wrong = data.probes.filter(function (probe) {
+      return level.blockedByGrave(probe.x, probe.y, probe.type) !== probe.blocked;
+    }).map(function (probe) { return probe.type + '@' + probe.x + '/' + probe.y; });
+    check('Grabsteine: Client und Server sperren dieselben Felder',
+      wrong.length === 0 && data.active.length === 2,
+      wrong.length ? 'abweichend: ' + wrong.join(', ') : data.probes.length + ' Proben, ' +
+        data.active.length + ' aktive Grabsteine (abgelaufener ignoriert)');
+  }());
+
+  (function testGraveOnlySameType() {
+    var level = makeLevel(FLAT);
+    level.graves = [{ type: 'spike', x: 10, y: 14 }];
+    check('Gelöschtes Feld sperrt nur denselben Typ',
+      !level.canPlaceAt(10, 14, 'spike') && level.canPlaceAt(10, 14, 'saw') && level.canPlaceAt(11, 14, 'spike'),
+      'Stacheln=' + level.canPlaceAt(10, 14, 'spike') + ', Säge=' + level.canPlaceAt(10, 14, 'saw') +
+      ', daneben=' + level.canPlaceAt(11, 14, 'spike'));
+  }());
+
   (function testCardCatalogMatches() {
     var server = <?= json_encode(array_map(static fn (array $c): bool => $c['rotatable'], Cards::CATALOG)) ?>;
     var problems = [];
@@ -876,7 +1120,7 @@ window.UDM_BIG_OK = <?= json_encode($bigOk) ?>;
     var problems = [];
     levels.forEach(function (def) {
       var level = new UDM.Level(def);
-      for (var i = 0; i < 3; i++) {
+      for (var i = 0; i < 4; i++) {
         var spawn = level.spawnPoint(i);
         var p = new UDM.Player(i, { name: 'T', char: 'duck' });
         p.reset(spawn.x, spawn.y);
@@ -885,9 +1129,14 @@ window.UDM_BIG_OK = <?= json_encode($bigOk) ?>;
         if (!p.onGround) { problems.push(def.name + ': Spieler ' + (i + 1) + ' steht nicht auf Boden'); }
       }
     });
-    check('Alle drei Startplätze sind in jedem Level sicher',
-      problems.length === 0, problems.join(' | ') || '4 Level x 3 Startplätze');
+    check('Alle vier Startplätze sind in jedem Level sicher',
+      problems.length === 0, problems.join(' | ') || levels.length + ' Level x 4 Startplätze');
   }());
+
+  /* ------------------------------------------------ Serverregeln (PHP) */
+  (window.UDM_SERVER_CHECKS || []).forEach(function (c) {
+    check('Server: ' + c.name, c.ok, c.detail);
+  });
 
   /* -------------------------------------------------------- Darstellung */
 

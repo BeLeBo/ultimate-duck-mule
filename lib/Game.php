@@ -14,7 +14,7 @@ require_once __DIR__ . '/Rooms.php';
  */
 final class Game
 {
-    public const MAX_PLAYERS = 3;
+    public const MAX_PLAYERS = 4;
     public const MIN_PLAYERS = 2;
     public const HAND_SIZE = 4;
 
@@ -43,7 +43,7 @@ final class Game
     public const DEAD_ROUND_LIMIT = 3;
 
     /** @var list<string> */
-    public const CHARACTERS = ['duck', 'mule', 'racoon'];
+    public const CHARACTERS = ['duck', 'mule', 'racoon', 'frog'];
 
     /** @return array<string, mixed> */
     public static function newRoom(string $code, int $targetScore, ?string $levelId): array
@@ -56,13 +56,17 @@ final class Game
             'phase' => 'lobby',
             'round' => 0,
             'levelId' => $levelId !== null && Levels::byId($levelId) !== null ? $levelId : Levels::randomId(),
+            // "Zufall" gewaehlt? Dann wird bei jedem Matchstart neu gewuerfelt.
+            'randomLevel' => $levelId === null || Levels::byId($levelId) === null,
             'targetScore' => max(3, min(30, $targetScore)),
             'hostToken' => null,
             'order' => [],
             'turn' => 0,
-            'firstBuilder' => 0,
+            'buildOrder' => [],
             'nextBlockId' => 1,
             'blocks' => [],
+            // Geloeschte Bauteile: gleicher Typ darf dort bis 'until' nicht wieder hin.
+            'graves' => [],
             'deadRounds' => 0,
             'players' => [],
             'phaseStarted' => time(),
@@ -125,17 +129,63 @@ final class Game
         self::resetMatch($room);
     }
 
-    /** Revanche nach dem Matchende - nur der Gastgeber, nur aus 'over'. */
-    public static function restartMatch(array &$room, string $token): void
+    /**
+     * Nach dem Matchende zurueck in die Lobby: dort waehlt der Gastgeber Welt
+     * und Zielpunkte neu, und neue Mitspieler koennen noch beitreten.
+     */
+    public static function backToLobby(array &$room, string $token): void
     {
         if ($room['hostToken'] !== $token) {
-            throw new RuntimeException('Nur der Gastgeber kann ein neues Match starten.');
+            throw new RuntimeException('Nur der Gastgeber kann ein neues Match vorbereiten.');
         }
         if ($room['phase'] !== 'over') {
             throw new RuntimeException('Das Match laeuft noch.');
         }
-        self::log($room, 'Neues Match!');
-        self::resetMatch($room);
+
+        foreach ($room['players'] as &$player) {
+            $player['score'] = 0;
+            $player['hand'] = [];
+            $player['ready'] = false;
+            $player['result'] = null;
+            $player['pos'] = null;
+        }
+        unset($player);
+
+        $room['phase'] = 'lobby';
+        $room['round'] = 0;
+        $room['blocks'] = [];
+        $room['graves'] = [];
+        $room['deadRounds'] = 0;
+        $room['winner'] = null;
+        $room['lastRound'] = null;
+        $room['buildView'] = null;
+        $room['phaseStarted'] = time();
+        self::log($room, 'Zurück in der Lobby.');
+    }
+
+    /**
+     * Welt und Zielpunkte in der Lobby aendern - nur der Gastgeber.
+     *
+     * @param array<string, mixed> $room
+     */
+    public static function updateSettings(array &$room, string $token, string $levelId, int $target): void
+    {
+        if ($room['hostToken'] !== $token) {
+            throw new RuntimeException('Nur der Gastgeber kann die Einstellungen ändern.');
+        }
+        if ($room['phase'] !== 'lobby') {
+            throw new RuntimeException('Einstellungen gehen nur in der Lobby.');
+        }
+
+        if ($levelId === '' || Levels::byId($levelId) === null) {
+            $room['randomLevel'] = true;
+            $room['levelId'] = Levels::randomId();
+        } else {
+            $room['randomLevel'] = false;
+            $room['levelId'] = $levelId;
+        }
+        $room['targetScore'] = max(3, min(30, $target));
+        self::touch($room);
     }
 
     /**
@@ -154,7 +204,11 @@ final class Game
         }
         unset($player);
 
+        if (!empty($room['randomLevel'])) {
+            $room['levelId'] = Levels::randomId();
+        }
         $room['blocks'] = [];
+        $room['graves'] = [];
         $room['nextBlockId'] = 1;
         $room['round'] = 0;
         $room['deadRounds'] = 0;
@@ -168,8 +222,7 @@ final class Game
     {
         $room['round']++;
         $active = self::connectedTokens($room);
-        $count = max(1, count($room['order']));
-        $room['firstBuilder'] = ($room['round'] - 1) % $count;
+        $room['graves'] = self::activeGraves($room);
 
         foreach ($room['players'] as $token => &$player) {
             $player['hand'] = Cards::deal(self::HAND_SIZE);
@@ -183,10 +236,36 @@ final class Game
         unset($player);
 
         $room['phase'] = 'build';
-        $room['turn'] = $room['firstBuilder'];
+        $room['buildOrder'] = self::buildOrder($room);
+        $room['turn'] = 0;
         $room['phaseStarted'] = time();
         self::skipUnavailableBuilders($room);
         self::touch($room);
+    }
+
+    /**
+     * Bau-Reihenfolge nach Punktestand: wer vorne liegt, baut zuerst - wer
+     * hinten liegt, sieht alles und hat das letzte Wort. Gleichstand
+     * entscheidet das Los.
+     *
+     * @param array<string, mixed> $room
+     * @return list<string>
+     */
+    public static function buildOrder(array $room): array
+    {
+        $tokens = $room['order'];
+        $lots = [];
+        foreach ($tokens as $token) {
+            $lots[$token] = random_int(0, PHP_INT_MAX);
+        }
+        // Eigener Vergleich statt stabiler Sortierung: PHP 7.4 sortiert nicht stabil.
+        usort($tokens, static function (string $a, string $b) use ($room, $lots): int {
+            $byScore = (int) $room['players'][$b]['score'] <=> (int) $room['players'][$a]['score'];
+
+            return $byScore !== 0 ? $byScore : $lots[$a] <=> $lots[$b];
+        });
+
+        return $tokens;
     }
 
     /**
@@ -209,6 +288,9 @@ final class Game
             throw new RuntimeException('Diese Karte hast du nicht.');
         }
         $type = $hand[$cardIndex];
+        if (Cards::isPowerUp($type)) {
+            throw new RuntimeException('Das ist ein Power-up – einfach anklicken, um es einzusetzen.');
+        }
         if (!Cards::exists($type)) {
             throw new RuntimeException('Unbekanntes Bauteil.');
         }
@@ -217,6 +299,11 @@ final class Game
         }
         if (count($room['blocks']) >= self::MAX_BLOCKS) {
             throw new RuntimeException('Das Level ist voll.');
+        }
+        if (self::blockedByGrave($room, $x, $y, $type)) {
+            throw new RuntimeException(
+                'Hier wurde eben erst ' . Cards::CATALOG[$type]['name'] . ' entfernt – nächste Runde wieder.'
+            );
         }
         if (!self::canPlaceAt($room, $x, $y, $type)) {
             throw new RuntimeException('Hier ist kein Platz.');
@@ -234,7 +321,9 @@ final class Game
         // Nur die benutzte Karte wandert aus der Hand, der Rest bleibt.
         array_splice($player['hand'], $cardIndex, 1);
         $player['places'] = (int) $player['places'] - 1;
-        $done = $player['places'] <= 0 || $player['hand'] === [];
+        // Das letzte Bauteil beendet den Zug - ebenso, wenn keine
+        // Bauteilkarte mehr auf der Hand ist.
+        $done = $player['places'] <= 0 || !self::hasBlockCard($player['hand']);
         if ($done) {
             $player['placed'] = true;
             $player['hand'] = [];
@@ -246,6 +335,100 @@ final class Game
             self::advanceBuild($room);
         }
         self::touch($room);
+    }
+
+    /** @param list<string> $hand */
+    private static function hasBlockCard(array $hand): bool
+    {
+        foreach ($hand as $card) {
+            if (Cards::exists($card)) {
+                return true;
+            }
+        }
+
+        return false;
+    }
+
+    /**
+     * Setzt ein Power-up aus der Hand ein. Die Sprengladung braucht ein Ziel
+     * (x/y = Mitte des 3x3-Feldes), die anderen wirken sofort.
+     *
+     * @param array<string, mixed> $room
+     */
+    public static function usePower(array &$room, string $token, int $cardIndex, int $x, int $y): void
+    {
+        if ($room['phase'] !== 'build') {
+            throw new RuntimeException('Gerade ist keine Bauphase.');
+        }
+        if (self::currentBuilder($room) !== $token) {
+            throw new RuntimeException('Du bist nicht am Zug.');
+        }
+
+        $player = &$room['players'][$token];
+        $card = $player['hand'][$cardIndex] ?? null;
+        if ($card === null || !Cards::isPowerUp($card)) {
+            throw new RuntimeException('Diese Karte ist kein Power-up.');
+        }
+
+        $message = '';
+        switch ($card) {
+            case 'pu_extra':
+                $player['places'] = (int) $player['places'] + 1;
+                $message = 'darf ein Bauteil mehr setzen';
+                break;
+
+            case 'pu_remove':
+                $player['removes'] = (int) $player['removes'] + 1;
+                $message = 'bekommt eine Löschung mehr';
+                break;
+
+            case 'pu_redraw':
+                $keep = count($player['hand']) - 1;
+                // Die Karte selbst ist gleich weg; der Rest wird neu gezogen.
+                $player['hand'] = array_merge([$card], Cards::dealBlocks(max(1, $keep)));
+                $cardIndex = 0;
+                $message = 'zieht neue Karten';
+                break;
+
+            case 'pu_bomb':
+                $removed = self::blastArea($room, $x, $y);
+                if ($removed === 0) {
+                    throw new RuntimeException('Da ist nichts zu sprengen.');
+                }
+                $message = 'sprengt ' . $removed . ' Bauteil' . ($removed === 1 ? '' : 'e') . ' weg';
+                break;
+        }
+
+        array_splice($player['hand'], $cardIndex, 1);
+        unset($player);
+
+        self::log($room, self::nameOf($room, $token) . ' ' . $message . '.');
+        self::touch($room);
+    }
+
+    /**
+     * Raeumt alle Bauteile, die das 3x3-Feld um (x, y) beruehren.
+     *
+     * @param array<string, mixed> $room
+     */
+    public static function blastArea(array &$room, int $x, int $y): int
+    {
+        $kept = [];
+        $removed = 0;
+        foreach ($room['blocks'] as $block) {
+            $size = Cards::size((string) $block['type']);
+            $hit = (int) $block['x'] <= $x + 1 && (int) $block['x'] + $size['w'] - 1 >= $x - 1
+                && (int) $block['y'] <= $y + 1 && (int) $block['y'] + $size['h'] - 1 >= $y - 1;
+            if ($hit) {
+                self::addGrave($room, $block);
+                $removed++;
+            } else {
+                $kept[] = $block;
+            }
+        }
+        $room['blocks'] = $kept;
+
+        return $removed;
     }
 
     /**
@@ -284,6 +467,7 @@ final class Game
 
         $removed = $room['blocks'][$index];
         array_splice($room['blocks'], $index, 1);
+        self::addGrave($room, $removed);
         $player['removes'] = (int) $player['removes'] - 1;
         unset($player);
 
@@ -312,15 +496,13 @@ final class Game
     /** @param array<string, mixed> $room */
     private static function advanceBuild(array &$room): void
     {
-        $order = $room['order'];
-        $count = count($order);
-        for ($step = 1; $step <= $count; $step++) {
-            $idx = ($room['turn'] + $step) % $count;
-            $candidate = $order[$idx];
-            $player = $room['players'][$candidate] ?? null;
+        $order = self::currentOrder($room);
+        for ($idx = (int) $room['turn'] + 1; $idx < count($order); $idx++) {
+            $player = $room['players'][$order[$idx]] ?? null;
             if ($player !== null && !$player['placed'] && self::isConnected($player)) {
                 $room['turn'] = $idx;
                 $room['phaseStarted'] = time();
+                $room['buildView'] = null;
 
                 return;
             }
@@ -332,10 +514,8 @@ final class Game
     /** @param array<string, mixed> $room */
     private static function skipUnavailableBuilders(array &$room): void
     {
-        $order = $room['order'];
-        $count = count($order);
-        for ($step = 0; $step < $count; $step++) {
-            $idx = ($room['firstBuilder'] + $step) % $count;
+        $order = self::currentOrder($room);
+        for ($idx = 0; $idx < count($order); $idx++) {
             $player = $room['players'][$order[$idx]] ?? null;
             if ($player !== null && !$player['placed'] && self::isConnected($player)) {
                 $room['turn'] = $idx;
@@ -345,6 +525,20 @@ final class Game
         }
 
         self::beginParty($room);
+    }
+
+    /**
+     * Reihenfolge der laufenden Bauphase. Raeume von vor dieser Version
+     * kennen noch keine buildOrder - dann gilt die Beitrittsreihenfolge.
+     *
+     * @param array<string, mixed> $room
+     * @return list<string>
+     */
+    private static function currentOrder(array $room): array
+    {
+        $order = $room['buildOrder'] ?? [];
+
+        return is_array($order) && $order !== [] ? array_values($order) : $room['order'];
     }
 
     /** @param array<string, mixed> $room */
@@ -515,7 +709,7 @@ final class Game
 
                 if ($result !== null && $result['killerSlot'] === $player['slot']) {
                     $delta -= 1;
-                    $reasons[] = ['text' => 'Eigengoal', 'points' => -1];
+                    $reasons[] = ['text' => 'Eigentor', 'points' => -1];
                 }
             }
 
@@ -556,6 +750,7 @@ final class Game
             foreach ($room['blocks'] as $block) {
                 if (isset($spent[(int) $block['id']])) {
                     $spentCount++;
+                    self::addGrave($room, $block);
                 } else {
                     $kept[] = $block;
                 }
@@ -572,6 +767,7 @@ final class Game
             $room['deadRounds'] = (int) ($room['deadRounds'] ?? 0) + 1;
             if ($room['deadRounds'] >= self::DEAD_ROUND_LIMIT) {
                 $room['blocks'] = [];
+                $room['graves'] = [];
                 $room['deadRounds'] = 0;
                 $cleared = true;
                 self::log($room, 'Drei Runden ohne Zieleinlauf - das Level wird geraeumt.');
@@ -652,7 +848,7 @@ final class Game
             }
             self::touch($room);
         } elseif ($room['phase'] === 'over' && $room['hostToken'] === $token) {
-            self::restartMatch($room, $token);
+            self::backToLobby($room, $token);
             self::touch($room);
         }
     }
@@ -743,6 +939,9 @@ final class Game
      */
     public static function canPlaceAt(array $room, int $x, int $y, string $type = 'stone'): bool
     {
+        if (self::blockedByGrave($room, $x, $y, $type)) {
+            return false;
+        }
         $size = Cards::size($type);
         $blocked = Levels::blockedTiles((string) $room['levelId']);
         $taken = self::occupiedTiles($room);
@@ -761,6 +960,59 @@ final class Game
         }
 
         return true;
+    }
+
+    /**
+     * Merkt sich ein entferntes Bauteil: derselbe Typ darf bis zum Ende der
+     * naechsten Runde nicht auf eine ueberlappende Flaeche.
+     *
+     * @param array<string, mixed> $room
+     * @param array<string, mixed> $block
+     */
+    public static function addGrave(array &$room, array $block): void
+    {
+        $room['graves'][] = [
+            'type' => (string) $block['type'],
+            'x' => (int) $block['x'],
+            'y' => (int) $block['y'],
+            'until' => (int) $room['round'] + 1,
+        ];
+    }
+
+    /**
+     * @param array<string, mixed> $room
+     * @return list<array{type:string, x:int, y:int, until:int}>
+     */
+    public static function activeGraves(array $room): array
+    {
+        $round = (int) $room['round'];
+
+        return array_values(array_filter(
+            $room['graves'] ?? [],
+            static fn (array $grave): bool => (int) $grave['until'] >= $round
+        ));
+    }
+
+    /**
+     * Wuerde ein Bauteil dieses Typs hier einen frischen Grabstein ueberdecken?
+     *
+     * @param array<string, mixed> $room
+     */
+    public static function blockedByGrave(array $room, int $x, int $y, string $type): bool
+    {
+        $size = Cards::size($type);
+        foreach (self::activeGraves($room) as $grave) {
+            if ($grave['type'] !== $type) {
+                continue;
+            }
+            // Gleicher Typ = gleiche Groesse: Rechtecke ueberlappen?
+            if ($x < $grave['x'] + $size['w'] && $grave['x'] < $x + $size['w']
+                && $y < $grave['y'] + $size['h'] && $grave['y'] < $y + $size['h']) {
+                return true;
+            }
+        }
+
+        return false;
     }
 
     /**
@@ -787,13 +1039,9 @@ final class Game
     /** @param array<string, mixed> $room */
     public static function currentBuilder(array $room): ?string
     {
-        $order = $room['order'];
-        if ($order === []) {
-            return null;
-        }
-        $idx = (int) $room['turn'] % count($order);
+        $order = self::currentOrder($room);
 
-        return $order[$idx] ?? null;
+        return $order[(int) $room['turn']] ?? null;
     }
 
     /**
@@ -835,6 +1083,8 @@ final class Game
                 continue;
             }
             $isYou = $viewer !== null && $token === $viewer;
+            // Die Hand des Bauenden sehen alle - sie sollen zuschauen koennen.
+            $showHand = $isYou || ($room['phase'] === 'build' && $token === self::currentBuilder($room));
             $players[] = [
                 'slot' => (int) $player['slot'],
                 'name' => $player['name'],
@@ -846,7 +1096,7 @@ final class Game
                 'you' => $isYou,
                 'host' => $token === $room['hostToken'],
                 'handSize' => count($player['hand']),
-                'hand' => $isYou ? array_values($player['hand']) : [],
+                'hand' => $showHand ? array_values($player['hand']) : [],
                 'places' => (int) ($player['places'] ?? 0),
                 'removes' => (int) ($player['removes'] ?? 0),
                 'pos' => $player['pos'],
@@ -861,16 +1111,26 @@ final class Game
             'phase' => $room['phase'],
             'round' => (int) $room['round'],
             'levelId' => $room['levelId'],
+            'randomLevel' => !empty($room['randomLevel']),
             'targetScore' => (int) $room['targetScore'],
             'turnSlot' => $builder !== null && isset($room['players'][$builder])
                 ? (int) $room['players'][$builder]['slot']
                 : null,
+            'buildOrder' => array_values(array_map(
+                static fn (string $token): int => (int) ($room['players'][$token]['slot'] ?? -1),
+                self::currentOrder($room)
+            )),
             'youSlot' => $viewer !== null && isset($room['players'][$viewer])
                 ? (int) $room['players'][$viewer]['slot']
                 : null,
             'isHost' => $viewer !== null && $viewer === $room['hostToken'],
             'players' => $players,
             'blocks' => array_values($room['blocks']),
+            'graves' => array_map(
+                static fn (array $g): array => ['type' => $g['type'], 'x' => $g['x'], 'y' => $g['y']],
+                self::activeGraves($room)
+            ),
+            'buildView' => $room['phase'] === 'build' ? ($room['buildView'] ?? null) : null,
             'lastRound' => $room['lastRound'],
             'winner' => $room['winner'],
             'version' => (int) $room['version'],

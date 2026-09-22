@@ -2,13 +2,26 @@
 declare(strict_types=1);
 
 /**
- * Die Basis-Karten des Spiels.
+ * Die Welten des Spiels.
  *
- * Bewusst nur hier definiert: game.php reicht die Liste als JSON an den Client
- * weiter, damit Server und Browser garantiert dieselbe Geometrie benutzen.
+ * Jede Welt ist als ASCII-Karte gezeichnet - 40 Zeichen breit, 23 Zeilen
+ * hoch, eine Kachel pro Zeichen. So sieht man beim Bearbeiten direkt, wie
+ * das Level aussieht:
  *
- * Koordinaten sind Kachelkoordinaten (0/0 = oben links).
- * Rechtecke: x, y, w, h, t (ground | rock | oneway).
+ *   .  Luft
+ *   #  Boden (bekommt je nach Welt Gras, Schnee, Sand ... obendrauf)
+ *   R  Fels
+ *   -  Einweg-Plattform: von unten durchspringbar
+ *   S  Startplatz (Luftkachel, darunter muss Boden sein)
+ *   G  Ziel (Luftkachel, die Fahne steht darauf)
+ *
+ * Alle Welten sind ohne ein einziges Bauteil zu schaffen: Luecken hoechstens
+ * 3 Kacheln, Stufen hoechstens 2 Kacheln, Kopffreiheit an jeder Absprung-
+ * stelle. Ein Sprung schafft rund 3,3 Kacheln Hoehe und gut 5 Kacheln Weite.
+ * tests.php laesst in jeder Welt eine echte Figur den Weg ablaufen.
+ *
+ * game.php reicht die fertig ausgewerteten Welten als JSON an den Browser,
+ * damit Server und Client garantiert dieselbe Geometrie benutzen.
  */
 final class Levels
 {
@@ -16,94 +29,371 @@ final class Levels
     public const COLS = 40;
     public const ROWS = 23;
 
+    private const TERRAIN = ['#' => 'ground', 'R' => 'rock', '-' => 'oneway'];
+
+    /** @var list<array<string, mixed>>|null */
+    private static ?array $cache = null;
+
     /**
-     * Alle Level sind so gebaut, dass man sie **ohne ein einziges Bauteil**
-     * schaffen kann: Luecken hoechstens 3 Kacheln breit, Stufen hoechstens
-     * 2 Kacheln hoch. Gebaute Teile sind reine Hindernisse.
+     * Rohdaten der Welten. Neue Welt = neuer Eintrag hier.
      *
-     * Zum Rechnen: ein Sprung schafft rund 3,3 Kacheln Hoehe und aus vollem
-     * Lauf etwa 5 Kacheln Weite. tests.php faehrt jedes Level mit einem
-     * automatischen Laeufer ab und prueft genau das nach.
-     *
-     * @return list<array<string, mixed>>
+     * @return list<array{id:string, name:string, theme:string, desc:string, map:list<string>}>
      */
-    public static function all(): array
+    private static function definitions(): array
     {
         return [
             [
-                // Flacher Einstieg: immer nach rechts, drei kurze Luecken.
                 'id' => 'wiese',
                 'name' => 'Wiesenweg',
                 'theme' => 'day',
-                'spawn' => ['x' => 3, 'y' => 17],
-                'goal' => ['x' => 36, 'y' => 17],
-                'rects' => [
-                    ['x' => 0, 'y' => 18, 'w' => 10, 'h' => 5, 't' => 'ground'],
-                    ['x' => 13, 'y' => 18, 'w' => 6, 'h' => 5, 't' => 'ground'],
-                    ['x' => 19, 'y' => 16, 'w' => 6, 'h' => 7, 't' => 'ground'],
-                    ['x' => 28, 'y' => 16, 'w' => 4, 'h' => 7, 't' => 'ground'],
-                    ['x' => 34, 'y' => 18, 'w' => 6, 'h' => 5, 't' => 'ground'],
-                    ['x' => 22, 'y' => 11, 'w' => 5, 'h' => 1, 't' => 'oneway'],
+                'desc' => 'Flacher Einstieg mit drei kurzen Lücken.',
+                'map' => [
+                    '........................................',
+                    '........................................',
+                    '........................................',
+                    '........................................',
+                    '........................................',
+                    '........................................',
+                    '........................................',
+                    '........................................',
+                    '........................................',
+                    '........................................',
+                    '........................................',
+                    '......................-----.............',
+                    '........................................',
+                    '........................................',
+                    '........................................',
+                    '........................................',
+                    '...................######...####........',
+                    '...S...............######...####....G...',
+                    '##########...############...####..######',
+                    '##########...############...####..######',
+                    '##########...############...####..######',
+                    '##########...############...####..######',
+                    '##########...############...####..######',
                 ],
             ],
             [
-                // Treppe nach oben rechts. Jede Stufe steht auf dem Boden, so
-                // hat niemand eine Decke ueber dem Kopf - und wer in eine
-                // Luecke faellt, kommt aus ihr auch wieder heraus.
                 'id' => 'turm',
                 'name' => 'Turmklettern',
                 'theme' => 'dusk',
-                'spawn' => ['x' => 2, 'y' => 20],
-                'goal' => ['x' => 37, 'y' => 8],
-                'rects' => [
-                    ['x' => 0, 'y' => 21, 'w' => 40, 'h' => 2, 't' => 'ground'],
-                    ['x' => 5, 'y' => 19, 'w' => 4, 'h' => 2, 't' => 'ground'],
-                    ['x' => 11, 'y' => 17, 'w' => 4, 'h' => 4, 't' => 'ground'],
-                    ['x' => 17, 'y' => 15, 'w' => 4, 'h' => 6, 't' => 'ground'],
-                    ['x' => 24, 'y' => 13, 'w' => 4, 'h' => 8, 't' => 'ground'],
-                    ['x' => 30, 'y' => 11, 'w' => 4, 'h' => 10, 't' => 'ground'],
-                    ['x' => 35, 'y' => 9, 'w' => 5, 'h' => 12, 't' => 'rock'],
-                    ['x' => 13, 'y' => 7, 'w' => 5, 'h' => 1, 't' => 'oneway'],
+                'desc' => 'Eine lange Treppe hinauf zum Felsen.',
+                'map' => [
+                    '........................................',
+                    '........................................',
+                    '........................................',
+                    '........................................',
+                    '........................................',
+                    '........................................',
+                    '........................................',
+                    '.............-----......................',
+                    '.....................................G..',
+                    '...................................RRRRR',
+                    '...................................RRRRR',
+                    '..............................####.RRRRR',
+                    '..............................####.RRRRR',
+                    '........................####..####.RRRRR',
+                    '........................####..####.RRRRR',
+                    '.................####...####..####.RRRRR',
+                    '.................####...####..####.RRRRR',
+                    '...........####..####...####..####.RRRRR',
+                    '...........####..####...####..####.RRRRR',
+                    '.....####..####..####...####..####.RRRRR',
+                    '..S..####..####..####...####..####.RRRRR',
+                    '########################################',
+                    '########################################',
                 ],
             ],
             [
-                // Trittsteine ueber dem Abgrund - jede Luecke 2 Kacheln.
                 'id' => 'kluft',
                 'name' => 'Die Kluft',
                 'theme' => 'night',
-                'spawn' => ['x' => 3, 'y' => 13],
-                'goal' => ['x' => 34, 'y' => 13],
-                'rects' => [
-                    ['x' => 0, 'y' => 14, 'w' => 7, 'h' => 9, 't' => 'rock'],
-                    ['x' => 9, 'y' => 14, 'w' => 3, 'h' => 1, 't' => 'ground'],
-                    ['x' => 14, 'y' => 12, 'w' => 3, 'h' => 1, 't' => 'ground'],
-                    ['x' => 19, 'y' => 12, 'w' => 3, 'h' => 1, 't' => 'ground'],
-                    ['x' => 24, 'y' => 14, 'w' => 3, 'h' => 1, 't' => 'ground'],
-                    ['x' => 29, 'y' => 14, 'w' => 11, 'h' => 9, 't' => 'rock'],
-                    ['x' => 16, 'y' => 7, 'w' => 4, 'h' => 1, 't' => 'oneway'],
-                    ['x' => 0, 'y' => 8, 'w' => 2, 'h' => 6, 't' => 'rock'],
-                    ['x' => 38, 'y' => 8, 'w' => 2, 'h' => 6, 't' => 'rock'],
+                'desc' => 'Trittsteine über dem Abgrund.',
+                'map' => [
+                    '........................................',
+                    '........................................',
+                    '........................................',
+                    '........................................',
+                    '........................................',
+                    '........................................',
+                    '........................................',
+                    '................----....................',
+                    'RR....................................RR',
+                    'RR....................................RR',
+                    'RR....................................RR',
+                    'RR....................................RR',
+                    'RR............###..###................RR',
+                    'RR.S..............................G...RR',
+                    'RRRRRRR..###............###..RRRRRRRRRRR',
+                    'RRRRRRR......................RRRRRRRRRRR',
+                    'RRRRRRR......................RRRRRRRRRRR',
+                    'RRRRRRR......................RRRRRRRRRRR',
+                    'RRRRRRR......................RRRRRRRRRRR',
+                    'RRRRRRR......................RRRRRRRRRRR',
+                    'RRRRRRR......................RRRRRRRRRRR',
+                    'RRRRRRR......................RRRRRRRRRRR',
+                    'RRRRRRR......................RRRRRRRRRRR',
                 ],
             ],
             [
-                // Enger Gang unter dem Oberdeck, dann eine Treppe hinauf.
                 'id' => 'doppeldecker',
                 'name' => 'Doppeldecker',
                 'theme' => 'sunset',
-                'spawn' => ['x' => 3, 'y' => 20],
-                'goal' => ['x' => 34, 'y' => 12],
-                'rects' => [
-                    ['x' => 0, 'y' => 21, 'w' => 40, 'h' => 2, 't' => 'ground'],
-                    ['x' => 0, 'y' => 14, 'w' => 12, 'h' => 2, 't' => 'ground'],
-                    ['x' => 15, 'y' => 19, 'w' => 3, 'h' => 1, 't' => 'ground'],
-                    ['x' => 19, 'y' => 17, 'w' => 3, 'h' => 1, 't' => 'ground'],
-                    ['x' => 23, 'y' => 15, 'w' => 3, 'h' => 1, 't' => 'ground'],
-                    ['x' => 28, 'y' => 13, 'w' => 12, 'h' => 2, 't' => 'ground'],
-                    ['x' => 0, 'y' => 16, 'w' => 2, 'h' => 5, 't' => 'rock'],
-                    ['x' => 38, 'y' => 15, 'w' => 2, 'h' => 6, 't' => 'rock'],
+                'desc' => 'Enger Gang unten, Treppe hinauf aufs Oberdeck.',
+                'map' => [
+                    '........................................',
+                    '........................................',
+                    '........................................',
+                    '........................................',
+                    '........................................',
+                    '........................................',
+                    '........................................',
+                    '........................................',
+                    '........................................',
+                    '........................................',
+                    '........................................',
+                    '........................................',
+                    '..................................G.....',
+                    '............................############',
+                    '############................############',
+                    '############...........###............RR',
+                    'RR....................................RR',
+                    'RR.................###................RR',
+                    'RR....................................RR',
+                    'RR.............###....................RR',
+                    'RR.S..................................RR',
+                    '########################################',
+                    '########################################',
+                ],
+            ],
+            [
+                'id' => 'gletscher',
+                'name' => 'Gletscher',
+                'theme' => 'ice',
+                'desc' => 'Über den Eisberg und die treibenden Schollen.',
+                'map' => [
+                    '........................................',
+                    '........................................',
+                    '........................................',
+                    '........................................',
+                    '........................................',
+                    '........................................',
+                    '........................................',
+                    '........................................',
+                    '........................................',
+                    '.........-----..........................',
+                    '........................................',
+                    '........................................',
+                    '........................................',
+                    '....................####................',
+                    '....................####................',
+                    '...............#############............',
+                    '...............#############............',
+                    '.........####..#############.###........',
+                    '..S......................####.......G...',
+                    '#######..................####.....######',
+                    '#######..................####.....######',
+                    '#######.............................####',
+                    '#######.............................####',
+                ],
+            ],
+            [
+                'id' => 'pyramide',
+                'name' => 'Wüstenpyramide',
+                'theme' => 'desert',
+                'desc' => 'Stufe um Stufe über die Pyramide.',
+                'map' => [
+                    '........................................',
+                    '........................................',
+                    '........................................',
+                    '........................................',
+                    '........................................',
+                    '........................................',
+                    '........................................',
+                    '........................................',
+                    '........................................',
+                    '........................................',
+                    '..................RRRR..................',
+                    '..................RRRR..................',
+                    '................RRRRRRRR................',
+                    '................RRRRRRRR................',
+                    '..............RRRRRRRRRRRR..............',
+                    '..............RRRRRRRRRRRR..............',
+                    '............RRRRRRRRRRRRRRRR............',
+                    '............RRRRRRRRRRRRRRRR............',
+                    '...S......RRRRRRRRRRRRRRRRRRRR......G...',
+                    '########..RRRRRRRRRRRRRRRRRRRR..########',
+                    '########..RRRRRRRRRRRRRRRRRRRR..########',
+                    '########..RRRRRRRRRRRRRRRRRRRR..########',
+                    '########..RRRRRRRRRRRRRRRRRRRR..########',
+                ],
+            ],
+            [
+                'id' => 'vulkan',
+                'name' => 'Vulkankrater',
+                'theme' => 'lava',
+                'desc' => 'Trittsteine über glühender Lava.',
+                'map' => [
+                    '........................................',
+                    '........................................',
+                    '........................................',
+                    '........................................',
+                    '........................................',
+                    '........................................',
+                    '........................................',
+                    '........................................',
+                    '........................................',
+                    '........................................',
+                    '........................................',
+                    '........................................',
+                    '........................................',
+                    '.......................RRR..............',
+                    '.............RRR............RRR.........',
+                    '..S...............RRR...................',
+                    'RRRRRR..RRR..........................G..',
+                    'RRRRRR...........................RRRRRRR',
+                    'RRRRRR...........................RRRRRRR',
+                    'RRRRRR...........................RRRRRRR',
+                    'RRRRRR...........................RRRRRRR',
+                    'RRRRRR...........................RRRRRRR',
+                    'RRRRRR...........................RRRRRRR',
+                ],
+            ],
+            [
+                'id' => 'burg',
+                'name' => 'Burgmauer',
+                'theme' => 'castle',
+                'desc' => 'Durch das Tor oder über die Zinnen zum Turm.',
+                'map' => [
+                    '........................................',
+                    '........................................',
+                    '........................................',
+                    '........................................',
+                    '........................................',
+                    '........................................',
+                    '........................................',
+                    '........................................',
+                    '........................................',
+                    '........................................',
+                    '........................................',
+                    '......................................G.',
+                    '.....................................RRR',
+                    '................R..R..R..............RRR',
+                    '..............RRRRRRRRRRRR........RRRRRR',
+                    '..............RRRRRRRRRRRR........RRRRRR',
+                    '...........---RRRRRRRRRRRR....RRR.RRRRRR',
+                    '..............RRRRRRRRRRRR....RRR.RRRRRR',
+                    '........RRR................RR.RRR.RRRRRR',
+                    '..S.....RRR................RR.RRR.RRRRRR',
+                    '########################################',
+                    '########################################',
+                    '########################################',
                 ],
             ],
         ];
+    }
+
+    /** @return list<array<string, mixed>> */
+    public static function all(): array
+    {
+        if (self::$cache === null) {
+            self::$cache = array_map([self::class, 'parseMap'], self::definitions());
+        }
+
+        return self::$cache;
+    }
+
+    /**
+     * Wertet eine ASCII-Karte aus: Startplatz, Ziel und die Gelaendeflaechen
+     * als moeglichst grosse Rechtecke (spart JSON beim Ausliefern).
+     *
+     * @param array{id:string, name:string, theme:string, desc:string, map:list<string>} $def
+     * @return array<string, mixed>
+     */
+    public static function parseMap(array $def): array
+    {
+        $map = $def['map'];
+        $id = $def['id'];
+        if (count($map) !== self::ROWS) {
+            throw new LogicException("Welt '$id': " . count($map) . ' Zeilen statt ' . self::ROWS . '.');
+        }
+
+        $spawn = null;
+        $goal = null;
+        $runs = [];
+        foreach ($map as $y => $row) {
+            if (strlen($row) !== self::COLS) {
+                throw new LogicException("Welt '$id', Zeile $y: " . strlen($row) . ' Zeichen statt ' . self::COLS . '.');
+            }
+            $x = 0;
+            while ($x < self::COLS) {
+                $char = $row[$x];
+                if ($char === 'S' || $char === 'G') {
+                    if (($char === 'S' ? $spawn : $goal) !== null) {
+                        throw new LogicException("Welt '$id': mehr als ein '$char'.");
+                    }
+                    if ($char === 'S') {
+                        $spawn = ['x' => $x, 'y' => $y];
+                    } else {
+                        $goal = ['x' => $x, 'y' => $y];
+                    }
+                    $x++;
+                    continue;
+                }
+                if (!isset(self::TERRAIN[$char])) {
+                    if ($char !== '.') {
+                        throw new LogicException("Welt '$id', Zeile $y: unbekanntes Zeichen '$char'.");
+                    }
+                    $x++;
+                    continue;
+                }
+                $start = $x;
+                while ($x < self::COLS && $row[$x] === $char) {
+                    $x++;
+                }
+                $runs[] = ['x' => $start, 'y' => $y, 'w' => $x - $start, 'h' => 1, 't' => self::TERRAIN[$char]];
+            }
+        }
+
+        if ($spawn === null || $goal === null) {
+            throw new LogicException("Welt '$id': Startplatz (S) und Ziel (G) muessen gesetzt sein.");
+        }
+
+        return [
+            'id' => $id,
+            'name' => $def['name'],
+            'theme' => $def['theme'],
+            'desc' => $def['desc'],
+            'spawn' => $spawn,
+            'goal' => $goal,
+            'rects' => self::mergeRuns($runs),
+        ];
+    }
+
+    /**
+     * Fasst gleich breite, uebereinanderliegende Streifen zu Rechtecken
+     * zusammen.
+     *
+     * @param list<array{x:int, y:int, w:int, h:int, t:string}> $runs
+     * @return list<array{x:int, y:int, w:int, h:int, t:string}>
+     */
+    private static function mergeRuns(array $runs): array
+    {
+        $open = [];
+        $done = [];
+        foreach ($runs as $run) {
+            $key = $run['x'] . ':' . $run['w'] . ':' . $run['t'];
+            if (isset($open[$key]) && $open[$key]['y'] + $open[$key]['h'] === $run['y']) {
+                $open[$key]['h']++;
+                continue;
+            }
+            if (isset($open[$key])) {
+                $done[] = $open[$key];
+            }
+            $open[$key] = $run;
+        }
+
+        return array_merge($done, array_values($open));
     }
 
     /** @return array<string, mixed>|null */
@@ -147,11 +437,8 @@ final class Levels
             }
         }
 
-        // Startbereich freihalten (3 breit, 3 hoch ueber dem Spawn).
-        for ($dx = -1; $dx <= 2; $dx++) {
-            for ($dy = -2; $dy <= 0; $dy++) {
-                $blocked[($level['spawn']['x'] + $dx) . ',' . ($level['spawn']['y'] + $dy)] = true;
-            }
+        foreach (self::safeZone($level) as $key => $_) {
+            $blocked[$key] = true;
         }
 
         // Zielbereich freihalten (Fahne ist 1x2 Kacheln hoch, plus Rand).
@@ -162,6 +449,25 @@ final class Levels
         }
 
         return $blocked;
+    }
+
+    /**
+     * Die Startzone: 4 Kacheln breit, 3 hoch. Hier darf nicht gebaut werden,
+     * und wer darin steht, ist unverwundbar.
+     *
+     * @param array<string, mixed> $level
+     * @return array<string, true>
+     */
+    public static function safeZone(array $level): array
+    {
+        $zone = [];
+        for ($dx = -1; $dx <= 2; $dx++) {
+            for ($dy = -2; $dy <= 0; $dy++) {
+                $zone[($level['spawn']['x'] + $dx) . ',' . ($level['spawn']['y'] + $dy)] = true;
+            }
+        }
+
+        return $zone;
     }
 
     public static function inBounds(int $x, int $y): bool

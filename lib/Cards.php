@@ -119,6 +119,47 @@ final class Cards
         ],
     ];
 
+    /**
+     * Power-ups: Karten, die kein Bauteil setzen, sondern den eigenen Zug
+     * verbessern. Sie liegen zusaetzlich zu den Bauteilen auf der Hand.
+     *
+     * @var array<string, array{name:string, desc:string, weight:int, target:bool}>
+     */
+    public const POWERUPS = [
+        'pu_extra' => [
+            'name' => 'Doppelbau',
+            'desc' => 'Du darfst in diesem Zug ein Bauteil mehr setzen.',
+            'weight' => 4,
+            'target' => false,
+        ],
+        'pu_remove' => [
+            'name' => 'Abrissbirne',
+            'desc' => 'Eine zusätzliche Löschung: entferne ein Bauteil deiner Wahl.',
+            'weight' => 4,
+            'target' => false,
+        ],
+        'pu_bomb' => [
+            'name' => 'Sprengladung',
+            'desc' => 'Räumt alle Bauteile in einem 3×3-Feld deiner Wahl.',
+            'weight' => 2,
+            'target' => true,
+        ],
+        'pu_redraw' => [
+            'name' => 'Neue Karten',
+            'desc' => 'Wirf deine übrigen Karten ab und ziehe neue.',
+            'weight' => 3,
+            'target' => false,
+        ],
+    ];
+
+    /** Chance (in Prozent), dass die letzte Handkarte ein Power-up ist. */
+    public const POWERUP_CHANCE = 40;
+
+    public static function isPowerUp(string $id): bool
+    {
+        return isset(self::POWERUPS[$id]);
+    }
+
     /** @return list<string> */
     public static function ids(): array
     {
@@ -149,30 +190,59 @@ final class Cards
     }
 
     /**
-     * Zieht eine Hand aus gewichteten Karten - ohne Doubletten, solange genug
-     * verschiedene Karten existieren.
+     * Zieht eine Hand: mindestens alle Karten bis auf eine sind Bauteile,
+     * die letzte ist mit POWERUP_CHANCE Prozent ein Power-up. So hat jeder
+     * immer etwas zum Bauen.
      *
      * @return list<string>
      */
     public static function deal(int $size = 4): array
     {
-        $pool = [];
-        foreach (self::CATALOG as $id => $card) {
-            for ($i = 0; $i < $card['weight']; $i++) {
-                $pool[] = $id;
-            }
+        if (random_int(1, 100) <= self::POWERUP_CHANCE) {
+            $hand = self::dealBlocks($size - 1);
+            $hand[] = self::weightedPick(self::POWERUPS);
+
+            return $hand;
         }
 
+        return self::dealBlocks($size);
+    }
+
+    /**
+     * Nur Bauteile, ohne Doubletten.
+     *
+     * @return list<string>
+     */
+    public static function dealBlocks(int $size): array
+    {
         $hand = [];
         $guard = 0;
         while (count($hand) < $size && $guard < 500) {
             $guard++;
-            $pick = $pool[random_int(0, count($pool) - 1)];
+            $pick = self::weightedPick(self::CATALOG);
             if (!in_array($pick, $hand, true)) {
                 $hand[] = $pick;
             }
         }
 
         return $hand;
+    }
+
+    /** @param array<string, array{weight:int}> $catalog */
+    private static function weightedPick(array $catalog): string
+    {
+        $total = 0;
+        foreach ($catalog as $card) {
+            $total += $card['weight'];
+        }
+        $roll = random_int(1, $total);
+        foreach ($catalog as $id => $card) {
+            $roll -= $card['weight'];
+            if ($roll <= 0) {
+                return $id;
+            }
+        }
+
+        return (string) array_key_first($catalog);
     }
 }

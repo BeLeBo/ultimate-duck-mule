@@ -53,6 +53,8 @@
     this.hazards = [];
     this.projectiles = [];
     this.particles = [];
+    // Frisch entfernte Bauteile: derselbe Typ darf dort gerade nicht hin.
+    this.graves = [];
     this.rebuild([]);
   }
 
@@ -217,6 +219,7 @@
     var spec = type ? UDM.BLOCKS[type] : null;
     var w = (spec && spec.w) || 1;
     var h = (spec && spec.h) || 1;
+    if (type && this.blockedByGrave(tx, ty, type)) { return false; }
 
     for (var dx = 0; dx < w; dx++) {
       for (var dy = 0; dy < h; dy++) {
@@ -226,14 +229,54 @@
     return true;
   };
 
+  /**
+   * Liegt hier ein frischer Grabstein desselben Typs? Muss zu
+   * Game::blockedByGrave() in PHP passen.
+   */
+  Level.prototype.blockedByGrave = function (tx, ty, type) {
+    var spec = UDM.BLOCKS[type] || {};
+    var w = spec.w || 1;
+    var h = spec.h || 1;
+    for (var i = 0; i < this.graves.length; i++) {
+      var g = this.graves[i];
+      if (g.type !== type) { continue; }
+      if (tx < g.x + w && g.x < tx + w && ty < g.y + h && g.y < ty + h) { return true; }
+    }
+    return false;
+  };
+
   Level.prototype.tileFree = function (tx, ty) {
     if (!this.inBounds(tx, ty)) { return false; }
     if (this.cell(tx, ty)) { return false; }
-    var spawn = this.def.spawn;
+    if (this.isSafeTile(tx, ty)) { return false; }
     var goal = this.def.goal;
-    if (tx >= spawn.x - 1 && tx <= spawn.x + 2 && ty >= spawn.y - 2 && ty <= spawn.y) { return false; }
     if (tx >= goal.x - 1 && tx <= goal.x + 1 && ty >= goal.y - 2 && ty <= goal.y + 1) { return false; }
     return true;
+  };
+
+  /**
+   * Startzone: 4 Kacheln breit, 3 hoch. Muss zu Levels::safeZone() in PHP
+   * passen. Hier wird nicht gebaut, und wer darin steht, ist unverwundbar.
+   */
+  Level.prototype.isSafeTile = function (tx, ty) {
+    var spawn = this.def.spawn;
+    return tx >= spawn.x - 1 && tx <= spawn.x + 2 && ty >= spawn.y - 2 && ty <= spawn.y;
+  };
+
+  Level.prototype.safeRect = function () {
+    var spawn = this.def.spawn;
+    return { x: (spawn.x - 1) * TILE, y: (spawn.y - 2) * TILE, w: 4 * TILE, h: 3 * TILE };
+  };
+
+  /** Liegt der Punkt (in Pixeln) in der Startzone? */
+  Level.prototype.inSafeZone = function (px, py) {
+    var r = this.safeRect();
+    return px >= r.x && px < r.x + r.w && py >= r.y && py < r.y + r.h;
+  };
+
+  /** Hindernis fuer Saegenschienen und Luftstroeme: fest oder Startzone. */
+  Level.prototype.blocksHazard = function (tx, ty) {
+    return !this.inBounds(tx, ty) || this.isSolid(tx, ty) || this.isSafeTile(tx, ty);
   };
 
   /** Leitet Saegen, Luftstroeme, Schuetzen und toedliche Flaechen neu ab. */
@@ -297,13 +340,13 @@
     for (step = 1; step <= reach; step++) {
       var bx = cell.tx + (vertical ? 0 : -step);
       var by = cell.ty + (vertical ? -step : 0);
-      if (!this.inBounds(bx, by) || this.isSolid(bx, by)) { break; }
+      if (this.blocksHazard(bx, by)) { break; }
       back = step;
     }
     for (step = 1; step <= reach; step++) {
       var fx = cell.tx + (vertical ? 0 : step);
       var fy = cell.ty + (vertical ? step : 0);
-      if (!this.inBounds(fx, fy) || this.isSolid(fx, fy)) { break; }
+      if (this.blocksHazard(fx, fy)) { break; }
       forward = step;
     }
 
@@ -374,7 +417,7 @@
     for (var step = 1; step <= range; step++) {
       var tx = cell.tx + dir.dx * step;
       var ty = cell.ty + dir.dy * step;
-      if (!this.inBounds(tx, ty) || this.isSolid(tx, ty)) { break; }
+      if (this.blocksHazard(tx, ty)) { break; }
       this.streams.push({
         x: tx * TILE,
         y: ty * TILE,
@@ -446,7 +489,7 @@
       p.life -= dt;
       var tx = Math.floor((p.x + p.w / 2) / TILE);
       var ty = Math.floor((p.y + p.h / 2) / TILE);
-      if (p.life <= 0 || !this.inBounds(tx, ty) || this.isSolid(tx, ty)) {
+      if (p.life <= 0 || !this.inBounds(tx, ty) || this.isSolid(tx, ty) || this.isSafeTile(tx, ty)) {
         this.burst(p.x + p.w / 2, p.y + p.h / 2, '#d9c8a0', 6);
         this.projectiles.splice(i, 1);
       }
@@ -525,7 +568,8 @@
   Level.prototype.spawnPoint = function (i) {
     var s = this.def.spawn;
     return {
-      x: s.x * TILE + 3 + i * 24,
+      // Vier Figuren nebeneinander, alle innerhalb der Startzone.
+      x: s.x * TILE + 3 + i * 20,
       y: (s.y + 1) * TILE - UDM.PHYS.playerH
     };
   };

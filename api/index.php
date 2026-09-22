@@ -114,6 +114,20 @@ function heartbeat(array &$room, string $token, array $data): void
         ];
     }
 
+    // Der Bauende meldet, was er gerade vorhat - die anderen sehen zu.
+    $build = $data['build'] ?? null;
+    if (is_array($build) && $room['phase'] === 'build' && Game::currentBuilder($room) === $token) {
+        $room['buildView'] = [
+            'slot' => (int) $room['players'][$token]['slot'],
+            'card' => max(-1, min(8, (int) ($build['card'] ?? -1))),
+            'rot' => (((int) ($build['rot'] ?? 0)) % 4 + 4) % 4,
+            'deleting' => (bool) ($build['deleting'] ?? false),
+            'bombing' => (bool) ($build['bombing'] ?? false),
+            'tx' => max(-1, min(Levels::COLS - 1, (int) ($build['tx'] ?? -1))),
+            'ty' => max(-1, min(Levels::ROWS - 1, (int) ($build['ty'] ?? -1))),
+        ];
+    }
+
     Game::tick($room);
 }
 
@@ -224,6 +238,55 @@ try {
                 heartbeat($room, $token, $data);
                 try {
                     Game::removeBlock($room, $token, int_field($data, 'x', -1), int_field($data, 'y', -1));
+                } catch (Throwable $e) {
+                    $error = $e->getMessage();
+                }
+
+                return $room;
+            });
+            if ($error !== null) {
+                respond(['ok' => false, 'error' => $error, 'state' => Game::publicState($room, $token)], 409);
+            }
+            respond(['ok' => true, 'state' => Game::publicState($room, $token)]);
+            // no break
+
+        case 'power':
+            [$code, $token] = credentials($data);
+            $error = null;
+            $room = Rooms::mutate($code, function (array $room) use ($token, $data, &$error): array {
+                heartbeat($room, $token, $data);
+                try {
+                    Game::usePower(
+                        $room,
+                        $token,
+                        int_field($data, 'card', -1),
+                        int_field($data, 'x', -1),
+                        int_field($data, 'y', -1)
+                    );
+                } catch (Throwable $e) {
+                    $error = $e->getMessage();
+                }
+
+                return $room;
+            });
+            if ($error !== null) {
+                respond(['ok' => false, 'error' => $error, 'state' => Game::publicState($room, $token)], 409);
+            }
+            respond(['ok' => true, 'state' => Game::publicState($room, $token)]);
+            // no break
+
+        case 'settings':
+            [$code, $token] = credentials($data);
+            $error = null;
+            $room = Rooms::mutate($code, function (array $room) use ($token, $data, &$error): array {
+                heartbeat($room, $token, $data);
+                try {
+                    Game::updateSettings(
+                        $room,
+                        $token,
+                        str_field($data, 'level'),
+                        int_field($data, 'target', Game::DEFAULT_TARGET)
+                    );
                 } catch (Throwable $e) {
                     $error = $e->getMessage();
                 }

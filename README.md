@@ -1,6 +1,6 @@
 # Ultimate Duck Mule
 
-Ein Party-Plattformer im Stil von *Ultimate Chicken Horse* für **2 bis 3 Spieler** –
+Ein Party-Plattformer im Stil von *Ultimate Chicken Horse* für **2 bis 4 Spieler** –
 gebaut ausschließlich mit **PHP, HTML, JavaScript und CSS**. Kein Build-Schritt,
 keine Abhängigkeiten, keine externen Assets: Grafik und Sound werden zur Laufzeit
 gezeichnet bzw. synthetisiert.
@@ -18,13 +18,24 @@ Jede Runde besteht aus zwei Phasen:
 1. **Bauphase** – Der Reihe nach setzt jeder Spieler *ein* Bauteil aus seiner Hand
    und darf dabei *ein bereits liegendes entfernen* (Taste `X` oder Rechtsklick) –
    egal von wem es stammt. Die Vorschau am Mauszeiger zeigt vorher, was das Bauteil
-   anrichtet.
+   anrichtet. **Wer vorne liegt, baut zuerst** – wer hinten liegt, sieht alles und
+   hat das letzte Wort; Gleichstand entscheidet das Los. Alle anderen schauen dem
+   Bauenden live zu: Mauszeiger, Handkarten, gewählte Karte und Drehung.
 2. **Partyphase** – Alle starten gleichzeitig und versuchen, die Fahne zu erreichen.
    Wer stirbt, schaut den Rest der Runde zu; wer feststeckt, kann aufgeben.
 
 **Bauteile verbrauchen sich:** Jedes Bauteil, das in einer Runde jemanden erwischt
 hat, verschwindet danach wieder. Wer eine gute Falle stellt, bekommt die Punkte –
 behält die Falle aber nicht.
+
+**Kein sofortiges Zurücksetzen:** Wird ein Bauteil entfernt – per Löschung, durch
+einen Kill oder eine Sprengladung –, darf bis zum Ende der nächsten Runde niemand
+denselben Typ wieder auf diese Stelle setzen. Die gesperrten Stellen sind in der
+Bauphase als blasser Umriss zu sehen.
+
+**Sichere Startzone:** Im Startbereich kann niemand bauen, und wer darin steht, ist
+unverwundbar. Pfeile zerfallen an ihrem Rand, Sägeschienen und Luftströme enden
+davor, Pendel schwingen harmlos hindurch.
 
 Kommt drei Runden hintereinander niemand an, gilt das Level als zugebaut und
 wird komplett geräumt – so kann sich ein Match nicht festfahren.
@@ -38,16 +49,20 @@ wird komplett geräumt – so kann sich ein Match nicht festfahren.
 | Einziger im Ziel | **+2** zusätzlich |
 | Ein Gegner stirbt an einem deiner Bauteile | **+1** pro Opfer |
 | Du hast ihn mit Öl oder Ventilator hineingeschoben | **+1** pro Opfer |
-| Du stirbst an deinem eigenen Bauteil | **−1** |
+| Du stirbst an deinem eigenen Bauteil (Eigentor) | **−1** |
 
 **Erreicht niemand das Ziel, gibt es für die ganze Runde gar nichts** – auch keine
 Fallenpunkte. Unter 0 Punkte geht es nicht.
 
 Öl und Ventilator töten nicht selbst, zählen aber: Wer damit jemanden über die
 Kante schiebt, bekommt den Kill. Rutscht das Opfer in die Falle eines Dritten,
-bekommen **beide** einen Punkt – der Fallensteller und der Nachhelfer. Wer nach einer Runde die Zielpunktzahl (Standard: 10)
-erreicht hat **und allein vorne liegt**, gewinnt das Match – bei Gleichstand geht es
-weiter.
+bekommen **beide** einen Punkt – der Fallensteller und der Nachhelfer.
+
+Wer nach einer Runde die Zielpunktzahl (Standard: 10) erreicht hat **und allein
+vorne liegt**, gewinnt das Match – bei Gleichstand geht es weiter. **Nochmal
+spielen** führt zurück zu den Einstellungen: lokal ins Menü mit allen Angaben
+vorausgefüllt, online in die Lobby, wo der Gastgeber Welt und Zielpunkte neu wählt
+und weitere Mitspieler noch beitreten können.
 
 ## Starten
 
@@ -113,13 +128,14 @@ Erweiterung aus.
 
 ### Lokal an einer Tastatur
 
-2 oder 3 Spieler, jeder mit eigenem Tastenblock:
+2 bis 4 Spieler, jeder mit eigenem Tastenblock:
 
 | Spieler | Laufen | Springen | Runter |
 | --- | --- | --- | --- |
 | 1 | `A` / `D` | `W` | `S` |
 | 2 | `←` / `→` | `↑` | `↓` |
 | 3 | `J` / `L` | `I` | `K` |
+| 4 | `F` / `H` oder Ziffernblock `4` / `6` | `T` oder `8` | `G` oder `5` |
 
 In der Bauphase platziert der Spieler, der am Zug ist, sein Bauteil mit der
 **Maus**: `1`–`4` wählt das Bauteil, `R` dreht es, `X` oder Rechtsklick entfernt
@@ -132,7 +148,7 @@ platziert mit `Enter`.
 
 Name und Figur trägt man **einmal** ein – sie gelten fürs Erstellen wie fürs
 Beitreten. Ein Spieler erstellt einen Raum und gibt den vierstelligen Code weiter;
-bis zu drei Spieler können beitreten. Die Steuerung ist dann `A`/`D` **oder** die Pfeiltasten.
+bis zu vier Spieler können beitreten. Die Steuerung ist dann `A`/`D` **oder** die Pfeiltasten.
 
 Aufteilung der Verantwortung:
 
@@ -142,8 +158,9 @@ Aufteilung der Verantwortung:
   Ergebnis („im Ziel“ / „gestorben an Bauteil von Spieler X“) zurück. Die anderen
   Figuren werden aus den Serverpositionen interpoliert.
 
-Synchronisiert wird per Polling (~11×/s in der Partyphase, 1×/s sonst) – ohne
-WebSockets, weil außer PHP nichts erlaubt ist. Für drei Spieler im LAN oder auf
+Synchronisiert wird per Polling – rund 11× pro Sekunde in der Partyphase, gut 5×
+in der Bauphase (damit man dem Bauenden flüssig zusieht) und etwa 1× sonst. Ohne
+WebSockets, weil außer PHP nichts erlaubt ist; für vier Spieler im LAN oder auf
 einem normalen Webspace reicht das.
 
 ## Bauteile
@@ -171,6 +188,55 @@ Alles hier ist ein Hindernis. Nichts davon bringt jemanden irgendwo hinauf.
 Jedes gesetzte Bauteil trägt in der Ecke einen kleinen Punkt in der Farbe seines
 Besitzers – wichtig, weil Kills den Bauteil-Besitzer belohnen.
 
+## Power-ups
+
+Mit etwas Glück (rund 40 %) ist die vierte Handkarte ein Power-up. Anklicken setzt
+es ein – am besten vor dem letzten Bauteil, denn das beendet den Zug. Wer nicht
+mehr bauen will, beendet seinen Zug mit **Zug beenden**.
+
+| Power-up | Wirkung |
+| --- | --- |
+| Doppelbau | Ein Bauteil mehr in diesem Zug |
+| Abrissbirne | Eine zusätzliche Löschung: ein Bauteil deiner Wahl entfernen |
+| Sprengladung | Räumt alle Bauteile in einem 3×3-Feld – Ziel anklicken |
+| Neue Karten | Übrige Hand abwerfen und neu ziehen |
+
+## Welten
+
+| Welt | Thema | Charakter |
+| --- | --- | --- |
+| Wiesenweg | Tag | Flacher Einstieg mit drei kurzen Lücken |
+| Turmklettern | Dämmerung | Lange Treppe hinauf zum Felsen |
+| Die Kluft | Nacht | Trittsteine über dem Abgrund |
+| Doppeldecker | Abendrot | Enger Gang unten, Treppe hinauf aufs Oberdeck |
+| Gletscher | Eis | Über den Eisberg und die treibenden Schollen |
+| Wüstenpyramide | Wüste | Stufe um Stufe über die Pyramide |
+| Vulkankrater | Lava | Trittsteine über glühender Lava |
+| Burgmauer | Burg | Durch das Tor oder über die Zinnen zum Turm |
+
+Jede Welt steht als **ASCII-Karte** in `lib/Levels.php` – 40 Zeichen breit, 23 Zeilen
+hoch, eine Kachel pro Zeichen. So sieht man beim Bearbeiten direkt, wie sie aussieht:
+
+```
+'..S.....RRR................RR.RRR.RRRRRR',
+'########################################',
+```
+
+| Zeichen | Bedeutung |
+| --- | --- |
+| `.` | Luft |
+| `#` | Boden (bekommt je nach Thema Gras, Schnee, Sand … obendrauf) |
+| `R` | Fels |
+| `-` | Einweg-Plattform, von unten durchspringbar |
+| `S` | Startplatz – darunter muss Boden sein |
+| `G` | Ziel – die Fahne steht darauf |
+
+Eine neue Welt ist ein neuer Eintrag in `Levels::definitions()`. Der Parser prüft
+Größe, Zeichen und dass es genau einen Start und ein Ziel gibt; `tests.php` prüft
+danach, ob die Welt ohne Bauteile zu schaffen ist und alle vier Startplätze sicher
+sind. Verfügbare Themen: `day`, `dusk`, `night`, `sunset`, `ice`, `desert`, `lava`,
+`castle`.
+
 ## Bewegung
 
 Laufen mit Beschleunigung und Reibung, variable Sprunghöhe (Taste früher loslassen
@@ -182,12 +248,14 @@ herauslaufen geht nicht, nur nach unten fällt man.
 
 ## Selbsttest
 
-`tests.php` im Browser öffnen. Die Seite fährt 49 Tests gegen die echte
-Spiel-Engine: Sprunghöhen, jedes Bauteil, jede Todesursache – und sie vergleicht
-die Bauregeln und den Bauteil-Katalog von JavaScript **mit denen von PHP**, damit
-Server und Client nicht auseinanderlaufen.
+`tests.php` im Browser öffnen. Die Seite fährt 68 Tests: gegen die echte
+Spiel-Engine (Sprunghöhen, jedes Bauteil, jede Todesursache, die sichere
+Startzone), gegen die Serverregeln in PHP (Reihenfolge, Kartenziehen, Power-ups,
+Grabsteine, Lobby, Karten-Parser) – und sie vergleicht Bauregeln, Grabsteine und
+den Bauteil-Katalog von JavaScript **mit denen von PHP**, damit Server und Client
+nicht auseinanderlaufen.
 
-Wichtigster Teil: für **jedes Level** sucht der Test erst einen Weg über die
+Wichtigster Teil: für **jede Welt** sucht der Test erst einen Weg über die
 erreichbaren Standflächen und lässt dann eine echte Figur diesen Weg mit der
 echten Physik ablaufen – ohne ein einziges Bauteil. Geht ein Level nicht mehr
 auf, fällt das sofort auf.
@@ -201,7 +269,7 @@ game.php               Spielseite; liefert Level- und Kartendaten als JSON an de
 tests.php              Selbsttest-Seite (Physik + Abgleich PHP/JavaScript)
 api/index.php          JSON-Schnittstelle für den Online-Modus
 lib/Cards.php          Katalog der Bauteile (Namen, Gewichte, Drehbarkeit)
-lib/Levels.php         Level-Geometrie und Bauregeln – einzige Quelle für beide Seiten
+lib/Levels.php         Die Welten als ASCII-Karten samt Parser und Bauregeln
 lib/Game.php           Spielregeln des Online-Modus: Phasen, Zugfolge, Punkte
 lib/Rooms.php          Raumdateien mit Dateisperre, Aufräumen alter Räume
 lib/View.php           Kleine HTML-Helfer (eingebettetes Tab-Symbol)

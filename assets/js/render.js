@@ -8,12 +8,37 @@
 
   /* Die Huegel sind bewusst dunstig und blaustichig gehalten: sie duerfen
    * nie mit dem begehbaren Gelaende verwechselt werden. */
+  /* Gelaende-Paletten: Oberkante (hell/dunkel), Koerper, Fels, Einweg. */
+  var GRASS = { top: '#7fd96a', topDark: '#5fbf52', body: '#8a5a35', rock: '#58607a', rockTop: '#6e7793', plank: '#a9743f' };
+
   var THEMES = {
-    day: { sky: ['#6fbdec', '#c4e9fb'], hill: '#7ba9c9', hillDark: '#5f8fb4', star: null, sun: '#fff4bd', pit: 'rgba(12,18,40,0.5)' },
-    dusk: { sky: ['#f79d65', '#5b4382'], hill: '#6d4f80', hillDark: '#4e3865', star: 'rgba(255,255,255,0.5)', sun: '#ffd6a5', pit: 'rgba(12,8,30,0.55)' },
-    night: { sky: ['#0d1836', '#26325f'], hill: '#1b2748', hillDark: '#131c36', star: 'rgba(255,255,255,0.85)', sun: '#e8eeff', pit: 'rgba(2,4,14,0.6)' },
-    sunset: { sky: ['#ff8f6b', '#ffd9a0'], hill: '#b3697c', hillDark: '#8b4f66', star: null, sun: '#fff1c1', pit: 'rgba(30,10,30,0.5)' }
+    day: { sky: ['#6fbdec', '#c4e9fb'], hill: '#7ba9c9', hillDark: '#5f8fb4', star: null, sun: '#fff4bd', pit: 'rgba(12,18,40,0.5)', ground: GRASS },
+    dusk: { sky: ['#f79d65', '#5b4382'], hill: '#6d4f80', hillDark: '#4e3865', star: 'rgba(255,255,255,0.5)', sun: '#ffd6a5', pit: 'rgba(12,8,30,0.55)', ground: GRASS },
+    night: { sky: ['#0d1836', '#26325f'], hill: '#1b2748', hillDark: '#131c36', star: 'rgba(255,255,255,0.85)', sun: '#e8eeff', pit: 'rgba(2,4,14,0.6)', ground: GRASS },
+    sunset: { sky: ['#ff8f6b', '#ffd9a0'], hill: '#b3697c', hillDark: '#8b4f66', star: null, sun: '#fff1c1', pit: 'rgba(30,10,30,0.5)', ground: GRASS },
+    ice: {
+      sky: ['#9fd4f5', '#eaf7ff'], hill: '#b7d3ea', hillDark: '#9bbcd8', star: null, sun: '#ffffff',
+      pit: 'rgba(20,50,90,0.45)',
+      ground: { top: '#ffffff', topDark: '#dcefff', body: '#8fb8d8', rock: '#6f8aa8', rockTop: '#9db4cc', plank: '#b8d6ee' }
+    },
+    desert: {
+      sky: ['#ffbf6b', '#fff0cc'], hill: '#e3b77a', hillDark: '#cf9d5e', star: null, sun: '#fff6d8',
+      pit: 'rgba(70,35,10,0.45)',
+      ground: { top: '#f8e0a0', topDark: '#ecc778', body: '#d6a45a', rock: '#c28e52', rockTop: '#dcae70', plank: '#a8773f' }
+    },
+    lava: {
+      sky: ['#1e0a0d', '#4d1612'], hill: '#3a1512', hillDark: '#2a0f0d', star: 'rgba(255,150,80,0.6)', sun: '#ff8a3d',
+      pit: 'rgba(255,70,20,0.55)', lava: true,
+      ground: { top: '#ff7a2f', topDark: '#4b3434', body: '#3a2a2a', rock: '#2f2525', rockTop: '#5a3a30', plank: '#6b4a3a' }
+    },
+    castle: {
+      sky: ['#56688e', '#c2cde2'], hill: '#4d5a74', hillDark: '#3e4960', star: null, sun: '#f1f4ff',
+      pit: 'rgba(10,14,30,0.5)', bricks: true,
+      ground: { top: '#a7abb4', topDark: '#8d919b', body: '#6d717b', rock: '#5f6572', rockTop: '#7b8290', plank: '#7a5a3c' }
+    }
   };
+
+  UDM.THEMES = THEMES;
 
   function roundRect(ctx, x, y, w, h, r) {
     var radius = Math.min(r, w / 2, h / 2);
@@ -55,6 +80,7 @@
 
       this.drawSky(ctx, level, w, h, time);
       this.drawTerrain(ctx, level);
+      this.drawSafeZone(ctx, level, time);
       this.drawBounds(ctx, w, h);
       this.drawStreams(ctx, level, time);
       this.drawBlocks(ctx, level, time);
@@ -118,12 +144,179 @@
       ctx.fillStyle = pit;
       ctx.fillRect(0, h * 0.55, w, h * 0.45);
 
+      if (theme.lava) { this.drawLava(ctx, w, h, time); }
+
       ctx.fillStyle = 'rgba(255,255,255,0.55)';
       for (var c = 0; c < 5; c++) {
         var cx = (rand() * w + time * (8 + c * 3)) % (w + 220) - 110;
         var cy = 50 + rand() * 180;
         this.drawCloud(ctx, cx, cy, 34 + rand() * 26);
       }
+    },
+
+    /** Die Startzone als sanft schimmernder Schutzraum. */
+    drawSafeZone: function (ctx, level, time) {
+      var r = level.safeRect();
+      var pulse = 0.05 + 0.025 * Math.sin(time * 2.2);
+      ctx.save();
+      ctx.fillStyle = 'rgba(160,230,255,' + pulse + ')';
+      roundRect(ctx, r.x + 2, r.y + 2, r.w - 4, r.h - 4, 10);
+      ctx.fill();
+      ctx.setLineDash([6, 6]);
+      ctx.strokeStyle = 'rgba(190,240,255,0.35)';
+      ctx.lineWidth = 2;
+      ctx.stroke();
+      ctx.restore();
+      ctx.lineWidth = 1;
+    },
+
+    /** Wabernde Lava am Boden des Vulkans - liegt hinter dem Gelaende. */
+    drawLava: function (ctx, w, h, time) {
+      var layers = [
+        { color: '#b8260f', base: 30, amp: 5, speed: 1.3, len: 55 },
+        { color: '#ff5a1f', base: 20, amp: 4, speed: 2.1, len: 38 },
+        { color: 'rgba(255,190,70,0.55)', base: 11, amp: 3, speed: 2.9, len: 26 }
+      ];
+      layers.forEach(function (layer) {
+        ctx.fillStyle = layer.color;
+        ctx.beginPath();
+        ctx.moveTo(0, h);
+        for (var x = 0; x <= w; x += 16) {
+          ctx.lineTo(x, h - layer.base - Math.sin(x / layer.len + time * layer.speed) * layer.amp);
+        }
+        ctx.lineTo(w, h);
+        ctx.closePath();
+        ctx.fill();
+      });
+    },
+
+    /**
+     * Kleine Vorschau einer Welt fuer die Weltauswahl im Menue: Himmel,
+     * Gelaende, Start und Ziel - alles aus denselben Funktionen wie im Spiel.
+     */
+    drawPreview: function (canvas, def) {
+      var ctx = canvas.getContext('2d');
+      var level = new UDM.Level(def);
+      var w = UDM.worldWidth();
+      var h = UDM.worldHeight();
+      ctx.save();
+      ctx.clearRect(0, 0, canvas.width, canvas.height);
+      ctx.scale(canvas.width / w, canvas.height / h);
+      this.drawSky(ctx, level, w, h, 0);
+      this.drawTerrain(ctx, level);
+      this.drawGoal(ctx, level, 0);
+
+      // Startplatz als Farbpunkte der vier Spieler.
+      for (var i = 0; i < 4; i++) {
+        var sp = level.spawnPoint(i);
+        ctx.fillStyle = UDM.slotColor(i);
+        ctx.beginPath();
+        ctx.arc(sp.x + 11, sp.y + 13, 11, 0, Math.PI * 2);
+        ctx.fill();
+      }
+      ctx.restore();
+    },
+
+    /**
+     * Symbol eines Bauteils fuer Handkarten und Regelliste. Grosse Teile
+     * werden so verkleinert, dass sie komplett ins Symbol passen.
+     */
+    drawCardIcon: function (canvas, type, rot, time) {
+      var spec = UDM.BLOCKS[type];
+      var ctx = canvas.getContext('2d');
+      ctx.clearRect(0, 0, canvas.width, canvas.height);
+      if (!spec) {
+        this.drawPowerIcon(ctx, canvas, type);
+        return;
+      }
+      var bw = spec.w || 1;
+      var bh = spec.h || 1;
+      var scale = Math.min(canvas.width - 8, canvas.height - 8) / (Math.max(bw, bh) * TILE);
+      ctx.save();
+      ctx.translate((canvas.width - bw * TILE * scale) / 2, (canvas.height - bh * TILE * scale) / 2);
+      ctx.scale(scale, scale);
+      this.drawBlock(ctx, {
+        type: type, tx: 0, ty: 0, w: bw, h: bh,
+        rot: spec.rotatable ? (rot || 0) : 0,
+        spec: spec, broken: false, touch: -1, shake: 0, id: 1
+      }, 0, 0, time || 0);
+      ctx.restore();
+    },
+
+    /** Symbole der Power-up-Karten. */
+    drawPowerIcon: function (ctx, canvas, type) {
+      var w = canvas.width;
+      var h = canvas.height;
+      var cx = w / 2;
+      var cy = h / 2;
+      var u = Math.min(w, h) / 40;
+      ctx.save();
+      ctx.lineCap = 'round';
+      ctx.lineJoin = 'round';
+
+      if (type === 'pu_extra') {
+        // Zwei gestapelte Bloecke mit Plus
+        ctx.fillStyle = '#9aa2b1';
+        ctx.fillRect(cx - 13 * u, cy + 1 * u, 12 * u, 12 * u);
+        ctx.fillStyle = '#b6bdc9';
+        ctx.fillRect(cx - 7 * u, cy - 11 * u, 12 * u, 12 * u);
+        ctx.fillStyle = '#7ef08a';
+        ctx.fillRect(cx + 5 * u, cy + 2 * u, 12 * u, 4 * u);
+        ctx.fillRect(cx + 9 * u, cy - 2 * u, 4 * u, 12 * u);
+      } else if (type === 'pu_remove') {
+        // Abrissbirne an der Kette
+        ctx.strokeStyle = '#8b92a5';
+        ctx.lineWidth = 2.5 * u;
+        ctx.beginPath();
+        ctx.moveTo(cx - 12 * u, cy - 15 * u);
+        ctx.lineTo(cx + 2 * u, cy + 1 * u);
+        ctx.stroke();
+        ctx.fillStyle = '#4b5162';
+        ctx.beginPath();
+        ctx.arc(cx + 5 * u, cy + 5 * u, 9 * u, 0, Math.PI * 2);
+        ctx.fill();
+        ctx.fillStyle = '#ff6f7d';
+        ctx.fillRect(cx + 1 * u, cy + 4 * u, 8 * u, 2.5 * u);
+      } else if (type === 'pu_bomb') {
+        // Bombe mit Zuendschnur und Funken
+        ctx.fillStyle = '#2b2d3a';
+        ctx.beginPath();
+        ctx.arc(cx - 2 * u, cy + 4 * u, 11 * u, 0, Math.PI * 2);
+        ctx.fill();
+        ctx.fillStyle = 'rgba(255,255,255,0.25)';
+        ctx.beginPath();
+        ctx.arc(cx - 6 * u, cy, 3 * u, 0, Math.PI * 2);
+        ctx.fill();
+        ctx.strokeStyle = '#c9a063';
+        ctx.lineWidth = 2 * u;
+        ctx.beginPath();
+        ctx.moveTo(cx + 5 * u, cy - 5 * u);
+        ctx.quadraticCurveTo(cx + 9 * u, cy - 13 * u, cx + 14 * u, cy - 12 * u);
+        ctx.stroke();
+        ctx.fillStyle = '#ffd23f';
+        ctx.beginPath();
+        ctx.arc(cx + 15 * u, cy - 13 * u, 3 * u, 0, Math.PI * 2);
+        ctx.fill();
+      } else if (type === 'pu_redraw') {
+        // Zwei Karten mit Kreispfeil
+        ctx.fillStyle = 'rgba(255,255,255,0.25)';
+        ctx.fillRect(cx - 13 * u, cy - 12 * u, 13 * u, 18 * u);
+        ctx.fillStyle = 'rgba(255,255,255,0.55)';
+        ctx.fillRect(cx - 7 * u, cy - 7 * u, 13 * u, 18 * u);
+        ctx.strokeStyle = '#7fd6ff';
+        ctx.lineWidth = 2.5 * u;
+        ctx.beginPath();
+        ctx.arc(cx + 7 * u, cy + 2 * u, 8 * u, -0.4 * Math.PI, 1.1 * Math.PI);
+        ctx.stroke();
+        ctx.fillStyle = '#7fd6ff';
+        ctx.beginPath();
+        ctx.moveTo(cx + 9 * u, cy - 10 * u);
+        ctx.lineTo(cx + 15 * u, cy - 5 * u);
+        ctx.lineTo(cx + 7 * u, cy - 3 * u);
+        ctx.closePath();
+        ctx.fill();
+      }
+      ctx.restore();
     },
 
     /** Unsichtbare Wand links und rechts - hier wird sie sichtbar gemacht. */
@@ -189,6 +382,8 @@
     /* ---------------------------------------------------------- Gelaende */
 
     drawTerrain: function (ctx, level) {
+      var theme = THEMES[level.def.theme] || THEMES.day;
+      var pal = theme.ground;
       for (var ty = 0; ty < level.rows; ty++) {
         for (var tx = 0; tx < level.cols; tx++) {
           var cell = level.cell(tx, ty);
@@ -197,7 +392,7 @@
           var y = ty * TILE;
 
           if (cell.type === 'oneway') {
-            ctx.fillStyle = '#a9743f';
+            ctx.fillStyle = pal.plank;
             roundRect(ctx, x, y + 6, TILE, 10, 3);
             ctx.fill();
             ctx.fillStyle = 'rgba(255,255,255,0.22)';
@@ -208,25 +403,40 @@
           var top = level.cell(tx, ty - 1);
           var isTop = !top || top.kind !== 'terrain';
           if (cell.type === 'rock') {
-            ctx.fillStyle = '#58607a';
+            ctx.fillStyle = pal.rock;
             ctx.fillRect(x, y, TILE, TILE);
             ctx.fillStyle = 'rgba(255,255,255,0.06)';
             ctx.fillRect(x, y, TILE, 4);
-            ctx.fillStyle = 'rgba(0,0,0,0.13)';
-            ctx.fillRect(x + ((tx * 7 + ty * 13) % 18), y + ((tx * 5 + ty * 3) % 20), 7, 6);
+            if (theme.bricks) {
+              // Burgstein: versetzte Mauerfugen statt Flecken.
+              ctx.strokeStyle = 'rgba(0,0,0,0.22)';
+              ctx.beginPath();
+              ctx.moveTo(x, y + 16.5); ctx.lineTo(x + TILE, y + 16.5);
+              var off = (ty % 2) * 16;
+              ctx.moveTo(x + off + 0.5, y); ctx.lineTo(x + off + 0.5, y + 16);
+              ctx.moveTo(x + ((off + 16) % 32) + 0.5, y + 16); ctx.lineTo(x + ((off + 16) % 32) + 0.5, y + TILE);
+              ctx.stroke();
+            } else {
+              ctx.fillStyle = 'rgba(0,0,0,0.13)';
+              ctx.fillRect(x + ((tx * 7 + ty * 13) % 18), y + ((tx * 5 + ty * 3) % 20), 7, 6);
+            }
             if (isTop) {
-              ctx.fillStyle = '#6e7793';
+              ctx.fillStyle = pal.rockTop;
               ctx.fillRect(x, y, TILE, 5);
+              if (theme.lava) {
+                ctx.fillStyle = 'rgba(255,120,40,0.75)';
+                ctx.fillRect(x, y, TILE, 2);
+              }
             }
           } else {
-            ctx.fillStyle = '#8a5a35';
+            ctx.fillStyle = pal.body;
             ctx.fillRect(x, y, TILE, TILE);
             ctx.fillStyle = 'rgba(0,0,0,0.12)';
             ctx.fillRect(x + ((tx * 11 + ty * 5) % 20), y + 10 + ((tx * 3 + ty * 7) % 14), 6, 5);
             if (isTop) {
-              ctx.fillStyle = '#5fbf52';
+              ctx.fillStyle = pal.topDark;
               ctx.fillRect(x, y, TILE, 8);
-              ctx.fillStyle = '#7fd96a';
+              ctx.fillStyle = pal.top;
               ctx.fillRect(x, y, TILE, 4);
             }
           }
@@ -260,7 +470,7 @@
         }
 
         if (!cell.broken && cell.ownerSlot >= 0) {
-          ctx.fillStyle = UDM.SLOT_COLORS[cell.ownerSlot % 3];
+          ctx.fillStyle = UDM.slotColor(cell.ownerSlot);
           ctx.globalAlpha = 0.9;
           ctx.fillRect(x + spanW - 6, y + 1, 5, 5);
           ctx.globalAlpha = 1;
@@ -778,7 +988,7 @@
       ctx.restore();
 
       if (showNames) {
-        var labelY = p.y - 12 - (p.slot % 3) * 12;
+        var labelY = p.y - 12 - (p.slot % 4) * 11;
         ctx.font = 'bold 11px system-ui, sans-serif';
         ctx.textAlign = 'center';
         ctx.fillStyle = 'rgba(0,0,0,0.45)';
@@ -806,6 +1016,13 @@
         ctx.beginPath();
         ctx.arc(-r * 0.62, -r * 0.62, r * 0.32, 0, Math.PI * 2);
         ctx.arc(r * 0.62, -r * 0.62, r * 0.32, 0, Math.PI * 2);
+        ctx.fill();
+      } else if (p.char === 'frog') {
+        // Glubschaugen sitzen als Hoecker oben auf dem Kopf.
+        ctx.fillStyle = p.color;
+        ctx.beginPath();
+        ctx.arc(-r * 0.2, -r * 0.8, r * 0.42, 0, Math.PI * 2);
+        ctx.arc(r * 0.45, -r * 0.8, r * 0.42, 0, Math.PI * 2);
         ctx.fill();
       } else {
         ctx.fillStyle = p.dark;
@@ -842,6 +1059,13 @@
         ctx.arc(r * 0.82, r * 0.08, 1.6, 0, Math.PI * 2);
         ctx.arc(r * 0.6, r * 0.14, 1.6, 0, Math.PI * 2);
         ctx.fill();
+      } else if (p.char === 'frog') {
+        ctx.strokeStyle = p.dark;
+        ctx.lineWidth = 2;
+        ctx.beginPath();
+        ctx.arc(r * 0.2, r * 0.1, r * 0.62, 0.15 * Math.PI, 0.75 * Math.PI);
+        ctx.stroke();
+        ctx.lineWidth = 1;
       } else {
         ctx.fillStyle = '#3a3a48';
         ctx.beginPath();
@@ -851,23 +1075,24 @@
 
       // Augen
       var blink = (Math.sin(time * 2.1 + p.slot * 3) > 0.985) ? 0.15 : 1;
-      var eyeX = p.char === 'duck' ? r * 0.28 : r * 0.3;
+      var eyeX = p.char === 'duck' ? r * 0.28 : (p.char === 'frog' ? r * 0.45 : r * 0.3);
+      var eyeY = p.char === 'frog' ? -r * 0.82 : -r * 0.2;
       ctx.fillStyle = '#ffffff';
       ctx.beginPath();
-      ctx.ellipse(eyeX, -r * 0.2, r * 0.26, r * 0.3 * blink, 0, 0, Math.PI * 2);
+      ctx.ellipse(eyeX, eyeY, r * 0.26, r * 0.3 * blink, 0, 0, Math.PI * 2);
       ctx.fill();
       if (!p.alive) {
         ctx.strokeStyle = '#2b2b33';
         ctx.lineWidth = 2;
         ctx.beginPath();
-        ctx.moveTo(eyeX - 4, -r * 0.45); ctx.lineTo(eyeX + 4, -r * 0.02);
-        ctx.moveTo(eyeX + 4, -r * 0.45); ctx.lineTo(eyeX - 4, -r * 0.02);
+        ctx.moveTo(eyeX - 4, eyeY - r * 0.25); ctx.lineTo(eyeX + 4, eyeY + r * 0.18);
+        ctx.moveTo(eyeX + 4, eyeY - r * 0.25); ctx.lineTo(eyeX - 4, eyeY + r * 0.18);
         ctx.stroke();
         ctx.lineWidth = 1;
       } else {
         ctx.fillStyle = '#20222b';
         ctx.beginPath();
-        ctx.ellipse(eyeX + 2, -r * 0.2, r * 0.13, r * 0.18 * blink, 0, 0, Math.PI * 2);
+        ctx.ellipse(eyeX + 2, eyeY, r * 0.13, r * 0.18 * blink, 0, 0, Math.PI * 2);
         ctx.fill();
       }
 
@@ -1088,6 +1313,43 @@
       ctx.setLineDash([]);
     },
 
+    /**
+     * Frisch entfernte Bauteile als blasser Umriss. Hat der Bauende genau
+     * diesen Typ ausgewaehlt, leuchtet die Sperre rot auf.
+     */
+    drawGraves: function (ctx, level, selectedType, time) {
+      for (var i = 0; i < level.graves.length; i++) {
+        var g = level.graves[i];
+        var spec = UDM.BLOCKS[g.type] || {};
+        var gw = (spec.w || 1) * TILE;
+        var gh = (spec.h || 1) * TILE;
+        var gx = g.x * TILE;
+        var gy = g.y * TILE;
+        var hot = g.type === selectedType;
+
+        ctx.save();
+        ctx.globalAlpha = hot ? 0.45 : 0.22;
+        this.drawBlock(ctx, {
+          type: g.type, tx: g.x, ty: g.y, w: spec.w || 1, h: spec.h || 1,
+          rot: 0, spec: spec, broken: false, touch: -1, shake: 0, id: 1
+        }, gx, gy, time);
+        ctx.globalAlpha = 1;
+        ctx.setLineDash([4, 4]);
+        ctx.lineWidth = hot ? 2.5 : 1.5;
+        ctx.strokeStyle = hot ? 'rgba(255,90,90,0.95)' : 'rgba(255,255,255,0.45)';
+        ctx.strokeRect(gx + 2, gy + 2, gw - 4, gh - 4);
+        if (hot) {
+          ctx.setLineDash([]);
+          ctx.beginPath();
+          ctx.moveTo(gx + 7, gy + 7); ctx.lineTo(gx + gw - 7, gy + gh - 7);
+          ctx.moveTo(gx + gw - 7, gy + 7); ctx.lineTo(gx + 7, gy + gh - 7);
+          ctx.stroke();
+        }
+        ctx.restore();
+      }
+      ctx.lineWidth = 1;
+    },
+
     drawBuildOverlay: function (ctx, state) {
       var build = state.build;
       var level = state.level;
@@ -1103,6 +1365,8 @@
         ctx.beginPath(); ctx.moveTo(0, gy * TILE); ctx.lineTo(w, gy * TILE); ctx.stroke();
       }
 
+      this.drawGraves(ctx, level, build.deleting ? null : build.type, state.time);
+
       if (build.tx >= 0 && build.ty >= 0 && build.tx < level.cols && build.ty < level.rows) {
         var x = build.tx * TILE;
         var y = build.ty * TILE;
@@ -1111,7 +1375,27 @@
         var spanW = ((ghostSpec && ghostSpec.w) || 1) * TILE;
         var spanH = ((ghostSpec && ghostSpec.h) || 1) * TILE;
 
-        if (build.deleting) {
+        if (build.bombing) {
+          // Sprengladung: 3x3-Feld, erwischte Bauteile leuchten auf.
+          var bx = (build.tx - 1) * TILE;
+          var by = (build.ty - 1) * TILE;
+          var pulse = 0.18 + 0.08 * Math.sin(state.time * 10);
+          ctx.fillStyle = 'rgba(255,140,40,' + pulse + ')';
+          ctx.fillRect(bx, by, TILE * 3, TILE * 3);
+          level.blocks.forEach(function (cell) {
+            var hit = cell.tx <= build.tx + 1 && cell.tx + (cell.w || 1) - 1 >= build.tx - 1 &&
+              cell.ty <= build.ty + 1 && cell.ty + (cell.h || 1) - 1 >= build.ty - 1;
+            if (!hit) { return; }
+            ctx.fillStyle = 'rgba(255,70,40,0.4)';
+            ctx.fillRect(cell.tx * TILE, cell.ty * TILE, (cell.w || 1) * TILE, (cell.h || 1) * TILE);
+          });
+          ctx.setLineDash([6, 4]);
+          ctx.lineWidth = 3;
+          ctx.strokeStyle = ok ? 'rgba(255,170,60,0.95)' : 'rgba(255,255,255,0.35)';
+          ctx.strokeRect(bx + 1.5, by + 1.5, TILE * 3 - 3, TILE * 3 - 3);
+          ctx.setLineDash([]);
+          ctx.lineWidth = 1;
+        } else if (build.deleting) {
           // Loeschvorschau: das getroffene Bauteil rot durchgestrichen.
           ctx.fillStyle = ok ? 'rgba(255,80,80,0.3)' : 'rgba(255,255,255,0.07)';
           ctx.fillRect(x, y, TILE, TILE);
@@ -1159,12 +1443,21 @@
         }
       }
 
-      // Start- und Zielbereich markieren.
-      ctx.setLineDash([5, 5]);
-      ctx.strokeStyle = 'rgba(255,255,255,0.35)';
-      var sp = level.def.spawn;
-      ctx.strokeRect((sp.x - 1) * TILE, (sp.y - 2) * TILE, TILE * 4, TILE * 3);
-      ctx.setLineDash([]);
+      if (build.label && build.tx >= 0 && build.ty >= 0) {
+        // Zuschauer sehen, wessen Mauszeiger das ist.
+        var lx = build.tx * TILE + TILE / 2;
+        var ly = build.ty * TILE - 10;
+        ctx.font = 'bold 12px system-ui, sans-serif';
+        var tw = ctx.measureText(build.label).width + 12;
+        ctx.fillStyle = 'rgba(10,12,28,0.8)';
+        roundRect(ctx, lx - tw / 2, ly - 13, tw, 18, 6);
+        ctx.fill();
+        ctx.fillStyle = build.color;
+        ctx.textAlign = 'center';
+        ctx.fillText(build.label, lx, ly);
+        ctx.textAlign = 'left';
+      }
+
       ctx.restore();
     }
   };

@@ -42,13 +42,20 @@
 
   /* ------------------------------------------------------------ Spieler */
 
-  UDM.SLOT_COLORS = ['#ffcb3d', '#3fc7f0', '#ff6f91'];
-  UDM.SLOT_DARK = ['#b8860b', '#1b7fa3', '#b03a5c'];
+  UDM.SLOT_COLORS = ['#ffcb3d', '#3fc7f0', '#ff6f91', '#7ed957'];
+  UDM.SLOT_DARK = ['#b8860b', '#1b7fa3', '#b03a5c', '#3f8f2c'];
+
+  /** Farbe eines Spielerplatzes - robust auch bei unerwarteten Werten. */
+  UDM.slotColor = function (slot) {
+    var n = UDM.SLOT_COLORS.length;
+    return UDM.SLOT_COLORS[((slot % n) + n) % n];
+  };
 
   UDM.CHARACTERS = {
     duck: { label: 'Ente' },
     mule: { label: 'Maultier' },
-    racoon: { label: 'Waschbär' }
+    racoon: { label: 'Waschbär' },
+    frog: { label: 'Frosch' }
   };
 
   UDM.DEATH_LABELS = {

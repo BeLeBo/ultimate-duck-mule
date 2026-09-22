@@ -18,6 +18,47 @@ if (isset($_GET['hinweis']) && isset($noticeMap[$_GET['hinweis']])) {
 
 $levels = Levels::all();
 $characters = Game::CHARACTERS;
+$charLabels = ['duck' => 'Ente', 'mule' => 'Maultier', 'racoon' => 'Waschbär', 'frog' => 'Frosch'];
+
+// Vorbelegung - etwa wenn man nach einem Match mit "Nochmal spielen"
+// hierher zurueckkommt und nur ein paar Einstellungen aendern will.
+$preLevel = (string) ($_GET['level'] ?? '');
+$pre = [
+    'tab' => in_array($_GET['tab'] ?? '', ['local', 'online', 'rules'], true) ? $_GET['tab'] : 'local',
+    'players' => max(2, min(Game::MAX_PLAYERS, (int) ($_GET['players'] ?? 3))),
+    'level' => Levels::byId($preLevel) !== null ? $preLevel : '',
+    'target' => max(3, min(30, (int) ($_GET['target'] ?? Game::DEFAULT_TARGET))),
+    'names' => [],
+    'chars' => [],
+];
+for ($i = 0; $i < Game::MAX_PLAYERS; $i++) {
+    $pre['names'][$i] = Game::cleanName((string) ($_GET['n' . $i] ?? ''), $i);
+    $pre['chars'][$i] = Game::cleanChar((string) ($_GET['c' . $i] ?? ''), $i);
+}
+
+/**
+ * Weltauswahl mit Vorschaubildern. Die Bilder zeichnet der Browser mit
+ * derselben Rendering-Funktion wie im Spiel.
+ *
+ * @param list<array<string, mixed>> $levels
+ */
+function levelPicker(string $inputId, string $inputName, string $selected, array $levels): void
+{
+    $e = static fn (string $v): string => htmlspecialchars($v, ENT_QUOTES);
+    echo '<div class="level-picker" data-input="' . $e($inputId) . '">';
+    echo '<button type="button" class="lvl' . ($selected === '' ? ' on' : '') . '" data-level="">'
+        . '<span class="lvl-thumb lvl-random">?</span><span class="lvl-name">Zufall</span></button>';
+    foreach ($levels as $level) {
+        echo '<button type="button" class="lvl' . ($selected === $level['id'] ? ' on' : '')
+            . '" data-level="' . $e($level['id']) . '" title="' . $e($level['desc']) . '">'
+            . '<canvas class="lvl-thumb" width="200" height="115" data-preview="' . $e($level['id']) . '"></canvas>'
+            . '<span class="lvl-name">' . $e($level['name']) . '</span></button>';
+    }
+    echo '</div>';
+    echo '<input type="hidden" id="' . $e($inputId) . '"'
+        . ($inputName !== '' ? ' name="' . $e($inputName) . '"' : '')
+        . ' value="' . $e($selected) . '">';
+}
 ?>
 <!DOCTYPE html>
 <html lang="de">
@@ -25,7 +66,7 @@ $characters = Game::CHARACTERS;
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>Ultimate Duck Mule</title>
-<meta name="description" content="Ein Party-Plattformer zum Selberbauen fuer bis zu drei Spieler.">
+<meta name="description" content="Ein Party-Plattformer zum Selberbauen für bis zu vier Spieler.">
 <?= View::favicon() ?>
 <link rel="stylesheet" href="assets/css/style.css">
 </head>
@@ -46,15 +87,15 @@ $characters = Game::CHARACTERS;
   <?php endif; ?>
 
   <nav class="tabs" id="tabs">
-    <button data-tab="local" class="on">Lokal an einer Tastatur</button>
-    <button data-tab="online">Online mit Raumcode</button>
-    <button data-tab="rules">Regeln &amp; Bauteile</button>
+    <button data-tab="local"<?= $pre['tab'] === 'local' ? ' class="on"' : '' ?>>Lokal an einer Tastatur</button>
+    <button data-tab="online"<?= $pre['tab'] === 'online' ? ' class="on"' : '' ?>>Online mit Raumcode</button>
+    <button data-tab="rules"<?= $pre['tab'] === 'rules' ? ' class="on"' : '' ?>>Regeln &amp; Bauteile</button>
   </nav>
 
   <!-- ------------------------------------------------------------ lokal -->
-  <section class="panel" id="tab-local">
+  <section class="panel<?= $pre['tab'] === 'local' ? '' : ' hidden' ?>" id="tab-local">
     <h2>Lokales Spiel</h2>
-    <p class="muted">2 oder 3 Spieler an einer Tastatur. Jeder hat seinen eigenen Tastenblock.</p>
+    <p class="muted">2 bis 4 Spieler an einer Tastatur. Jeder hat seinen eigenen Tastenblock.</p>
 
     <form method="get" action="game.php" id="local-form">
       <input type="hidden" name="mode" value="local">
@@ -63,24 +104,19 @@ $characters = Game::CHARACTERS;
         <div>
           <label for="local-count">Anzahl Spieler</label>
           <select name="players" id="local-count">
-            <option value="2">2 Spieler</option>
-            <option value="3" selected>3 Spieler</option>
-          </select>
-        </div>
-        <div>
-          <label for="local-level">Level</label>
-          <select name="level" id="local-level">
-            <option value="">Zufall</option>
-            <?php foreach ($levels as $level): ?>
-              <option value="<?= htmlspecialchars($level['id'], ENT_QUOTES) ?>"><?= htmlspecialchars($level['name'], ENT_QUOTES) ?></option>
-            <?php endforeach; ?>
+            <?php for ($n = 2; $n <= Game::MAX_PLAYERS; $n++): ?>
+              <option value="<?= $n ?>"<?= $n === $pre['players'] ? ' selected' : '' ?>><?= $n ?> Spieler</option>
+            <?php endfor; ?>
           </select>
         </div>
         <div>
           <label for="local-target">Punkte zum Sieg</label>
-          <input type="number" name="target" id="local-target" value="10" min="3" max="30">
+          <input type="number" name="target" id="local-target" value="<?= (int) $pre['target'] ?>" min="3" max="30">
         </div>
       </div>
+
+      <label>Welt</label>
+      <?php levelPicker('local-level', 'level', $pre['level'], $levels); ?>
 
       <?php for ($i = 0; $i < Game::MAX_PLAYERS; $i++): ?>
         <div class="seat" data-seat="<?= $i ?>">
@@ -88,16 +124,16 @@ $characters = Game::CHARACTERS;
           <div>
             <label for="name<?= $i ?>">Spieler <?= $i + 1 ?></label>
             <input type="text" id="name<?= $i ?>" name="n<?= $i ?>" maxlength="14"
-                   value="Spieler <?= $i + 1 ?>" autocomplete="off">
+                   value="<?= htmlspecialchars($pre['names'][$i], ENT_QUOTES) ?>" autocomplete="off">
             <div class="chars" data-charpick="<?= $i ?>">
               <?php $ci = 0; foreach ($characters as $char): ?>
                 <button type="button" data-char="<?= htmlspecialchars($char, ENT_QUOTES) ?>"
-                        class="<?= $ci === $i ? 'on' : '' ?>">
-                  <?= htmlspecialchars(['duck' => 'Ente', 'mule' => 'Maultier', 'racoon' => 'Waschbär'][$char] ?? $char, ENT_QUOTES) ?>
+                        class="<?= $char === $pre['chars'][$i] ? 'on' : '' ?>">
+                  <?= htmlspecialchars($charLabels[$char] ?? $char, ENT_QUOTES) ?>
                 </button>
               <?php $ci++; endforeach; ?>
             </div>
-            <input type="hidden" name="c<?= $i ?>" value="<?= htmlspecialchars($characters[$i % count($characters)], ENT_QUOTES) ?>">
+            <input type="hidden" name="c<?= $i ?>" value="<?= htmlspecialchars($pre['chars'][$i], ENT_QUOTES) ?>">
             <div class="keys" data-keys="<?= $i ?>"></div>
           </div>
         </div>
@@ -108,9 +144,9 @@ $characters = Game::CHARACTERS;
   </section>
 
   <!-- ----------------------------------------------------------- online -->
-  <section class="panel hidden" id="tab-online">
+  <section class="panel<?= $pre['tab'] === 'online' ? '' : ' hidden' ?>" id="tab-online">
     <h2>Online spielen</h2>
-    <p class="muted">Ein Spieler erstellt einen Raum und gibt den Code weiter &ndash; bis zu 3 Spieler.</p>
+    <p class="muted">Ein Spieler erstellt einen Raum und gibt den Code weiter &ndash; bis zu 4 Spieler.</p>
 
     <div class="seat" style="margin-bottom:16px">
       <canvas class="seat-canvas" width="54" height="54" data-slot="0" id="online-avatar"></canvas>
@@ -120,7 +156,7 @@ $characters = Game::CHARACTERS;
         <div class="chars" data-charpick="online">
           <?php $ci = 0; foreach ($characters as $char): ?>
             <button type="button" data-char="<?= htmlspecialchars($char, ENT_QUOTES) ?>" class="<?= $ci === 0 ? 'on' : '' ?>">
-              <?= htmlspecialchars(['duck' => 'Ente', 'mule' => 'Maultier', 'racoon' => 'Waschbär'][$char] ?? $char, ENT_QUOTES) ?>
+              <?= htmlspecialchars($charLabels[$char] ?? $char, ENT_QUOTES) ?>
             </button>
           <?php $ci++; endforeach; ?>
         </div>
@@ -130,19 +166,12 @@ $characters = Game::CHARACTERS;
     <div class="grid two">
       <div>
         <h3>Raum erstellen</h3>
-        <div class="row" style="margin-bottom:12px">
-          <div>
-            <label for="host-level">Level</label>
-            <select id="host-level">
-              <option value="">Zufall</option>
-              <?php foreach ($levels as $level): ?>
-                <option value="<?= htmlspecialchars($level['id'], ENT_QUOTES) ?>"><?= htmlspecialchars($level['name'], ENT_QUOTES) ?></option>
-              <?php endforeach; ?>
-            </select>
-          </div>
+        <label>Welt</label>
+        <?php levelPicker('host-level', '', $pre['level'], $levels); ?>
+        <div class="row" style="margin:12px 0">
           <div>
             <label for="host-target">Punkte zum Sieg</label>
-            <input type="number" id="host-target" value="10" min="3" max="30">
+            <input type="number" id="host-target" value="<?= (int) $pre['target'] ?>" min="3" max="30">
           </div>
         </div>
         <button type="button" class="big" id="btn-create">Raum erstellen</button>
@@ -167,11 +196,11 @@ $characters = Game::CHARACTERS;
   </section>
 
   <!-- ------------------------------------------------------------ Regeln -->
-  <section class="panel hidden" id="tab-rules">
+  <section class="panel<?= $pre['tab'] === 'rules' ? '' : ' hidden' ?>" id="tab-rules">
     <h2>Regeln</h2>
     <ol class="rules">
       <li><strong>Jedes Level ist ohne ein einziges Bauteil zu schaffen.</strong> Alles, was gebaut wird, ist ein Hindernis &ndash; es gibt keine Kletterhilfen.</li>
-      <li><strong>Bauphase:</strong> Der Reihe nach setzt jeder <strong>ein Bauteil</strong> aus seiner Hand und darf dabei <strong>ein bereits liegendes entfernen</strong> (Taste X oder Rechtsklick).</li>
+      <li><strong>Bauphase:</strong> Der Reihe nach setzt jeder <strong>ein Bauteil</strong> aus seiner Hand und darf dabei <strong>ein bereits liegendes entfernen</strong> (Taste X oder Rechtsklick). Die Reihenfolge richtet sich nach dem Punktestand: <strong>wer vorne liegt, baut zuerst</strong> &ndash; wer hinten liegt, sieht alles und hat das letzte Wort. Gleichstand entscheidet das Los.</li>
       <li><strong>Bauteile verbrauchen sich:</strong> Jedes Bauteil, das jemanden erwischt hat, verschwindet nach der Runde wieder.</li>
       <li><strong>Partyphase:</strong> Alle starten gleichzeitig und versuchen, die Fahne zu erreichen. Wer stirbt, schaut den Rest der Runde zu.</li>
       <li><strong>Punkte:</strong> Ziel erreicht <b>+1</b> &middot; erster im Ziel <b>+1</b> extra &middot;
@@ -196,6 +225,20 @@ $characters = Game::CHARACTERS;
         </li>
       <?php endforeach; ?>
     </ul>
+
+    <h3 style="margin-top:18px">Power-ups</h3>
+    <p class="muted small">Liegen manchmal als vierte Karte auf der Hand. Anklicken setzt sie ein &ndash; am besten vor dem letzten Bauteil, denn das beendet den Zug.</p>
+    <ul class="cardlist">
+      <?php foreach (Cards::POWERUPS as $id => $card): ?>
+        <li>
+          <canvas class="cicon" width="40" height="40" data-type="<?= htmlspecialchars($id, ENT_QUOTES) ?>"></canvas>
+          <div>
+            <b><?= htmlspecialchars($card['name'], ENT_QUOTES) ?></b><br>
+            <small><?= htmlspecialchars($card['desc'], ENT_QUOTES) ?></small>
+          </div>
+        </li>
+      <?php endforeach; ?>
+    </ul>
   </section>
 
 </div>
@@ -208,6 +251,26 @@ $characters = Game::CHARACTERS;
   'use strict';
   var UDM = window.UDM;
   var CHAR_ORDER = <?= json_encode(array_values($characters)) ?>;
+  var LEVELS = <?= json_encode($levels, JSON_UNESCAPED_UNICODE | JSON_HEX_TAG) ?>;
+
+  /* ------------------------------------------------- Weltauswahl */
+  document.querySelectorAll('canvas[data-preview]').forEach(function (canvas) {
+    var id = canvas.getAttribute('data-preview');
+    var def = LEVELS.filter(function (l) { return l.id === id; })[0];
+    if (def) { UDM.Render.drawPreview(canvas, def); }
+  });
+
+  document.querySelectorAll('.level-picker').forEach(function (picker) {
+    var input = document.getElementById(picker.getAttribute('data-input'));
+    picker.addEventListener('click', function (e) {
+      var card = e.target.closest('.lvl');
+      if (!card) { return; }
+      Array.prototype.forEach.call(picker.querySelectorAll('.lvl'), function (other) {
+        other.classList.toggle('on', other === card);
+      });
+      input.value = card.getAttribute('data-level');
+    });
+  });
 
   /* ------------------------------------------------------------- Tabs */
   var tabs = document.getElementById('tabs');
@@ -228,7 +291,7 @@ $characters = Game::CHARACTERS;
       x: 16, y: 16, w: UDM.PHYS.playerW, h: UDM.PHYS.playerH,
       slot: slot, char: charId, face: 1, anim: 'idle', animTime: 0,
       squash: 1, alive: true, finished: false, deathTimer: 0, name: '',
-      color: UDM.SLOT_COLORS[slot % 3], dark: UDM.SLOT_DARK[slot % 3]
+      color: UDM.slotColor(slot), dark: UDM.SLOT_DARK[slot % UDM.SLOT_DARK.length]
     };
   }
 
@@ -290,7 +353,8 @@ $characters = Game::CHARACTERS;
       var keys = seat.querySelector('[data-keys]');
       var layout = ['A / D laufen, W springen, S runter',
         '← / → laufen, ↑ springen, ↓ runter',
-        'J / L laufen, I springen, K runter'][index];
+        'J / L laufen, I springen, K runter',
+        'F / H laufen, T springen, G runter (oder Ziffernblock 4 6 8 5)'][index];
       keys.textContent = off ? 'nicht dabei' : layout;
     });
   }
@@ -299,15 +363,7 @@ $characters = Game::CHARACTERS;
 
   /* -------------------------------------------------- Bauteil-Symbole */
   document.querySelectorAll('canvas.cicon').forEach(function (canvas) {
-    var ctx = canvas.getContext('2d');
-    ctx.save();
-    ctx.translate(4, 4);
-    var type = canvas.getAttribute('data-type');
-    UDM.Render.drawBlock(ctx, {
-      type: type, tx: 0, ty: 0, rot: 1, spec: UDM.BLOCKS[type],
-      broken: false, touch: -1, shake: 0, id: 1
-    }, 0, 0, 0);
-    ctx.restore();
+    UDM.Render.drawCardIcon(canvas, canvas.getAttribute('data-type'), 1, 0);
   });
 
   /* ------------------------------------------------------- Animation */

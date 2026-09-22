@@ -31,7 +31,7 @@
     build: {
       order: [], idx: 0, card: 0, rot: 0,
       tx: -1, ty: -1, valid: false, busy: false,
-      deleting: false, canDelete: false
+      deleting: false, canDelete: false, bombing: false
     },
     party: { countdown: 0, time: 0, remaining: PARTY_LIMIT, started: false, firstFinishAt: -1, reported: false },
 
@@ -88,10 +88,10 @@
       this.dom['btn-giveup'].addEventListener('click', function () { self.giveUp(); });
 
       this.dom.overlay.addEventListener('click', function (e) {
-        var action = e.target.getAttribute && e.target.getAttribute('data-action');
-        if (!action) { return; }
+        var el = e.target.closest ? e.target.closest('[data-action]') : null;
+        if (!el || el.disabled) { return; }
         e.preventDefault();
-        self.onOverlayAction(action, e.target);
+        self.onOverlayAction(el.getAttribute('data-action'), el);
       });
 
       this.dom.hand.addEventListener('click', function (e) {
@@ -102,6 +102,8 @@
           self.rotateSelection();
         } else if (card.hasAttribute('data-erase')) {
           self.toggleDelete();
+        } else if (card.hasAttribute('data-endturn')) {
+          self.endTurn();
         } else {
           self.selectCard(index);
         }
@@ -137,20 +139,48 @@
     },
 
     /** Zieht eine Hand nach den Gewichten aus lib/Cards.php. */
+    /**
+     * Zieht eine Hand wie Cards::deal() in PHP: mindestens drei Bauteile,
+     * die vierte Karte ist mit etwas Glueck ein Power-up.
+     */
     dealHand: function () {
-      var cards = this.cfg.cards;
-      var pool = [];
-      Object.keys(cards).forEach(function (id) {
-        for (var i = 0; i < (cards[id].weight || 1); i++) { pool.push(id); }
-      });
+      if (Math.random() * 100 < (this.cfg.powerupChance || 0)) {
+        var hand = this.dealBlocks(HAND_SIZE - 1);
+        hand.push(this.weightedPick(this.cfg.powerups || {}));
+        return hand;
+      }
+      return this.dealBlocks(HAND_SIZE);
+    },
+
+    dealBlocks: function (size) {
       var hand = [];
       var guard = 0;
-      while (hand.length < HAND_SIZE && guard < 400) {
+      while (hand.length < size && guard < 400) {
         guard++;
-        var pick = pool[Math.floor(Math.random() * pool.length)];
+        var pick = this.weightedPick(this.cfg.cards);
         if (hand.indexOf(pick) === -1) { hand.push(pick); }
       }
       return hand;
+    },
+
+    weightedPick: function (catalog) {
+      var ids = Object.keys(catalog);
+      var total = ids.reduce(function (sum, id) { return sum + (catalog[id].weight || 1); }, 0);
+      var roll = Math.random() * total;
+      for (var i = 0; i < ids.length; i++) {
+        roll -= catalog[ids[i]].weight || 1;
+        if (roll <= 0) { return ids[i]; }
+      }
+      return ids[0];
+    },
+
+    isPowerUp: function (id) {
+      return !!(this.cfg.powerups && this.cfg.powerups[id]);
+    },
+
+    cardMeta: function (id) {
+      return (this.cfg.cards && this.cfg.cards[id]) ||
+        (this.cfg.powerups && this.cfg.powerups[id]) || { name: id, desc: '' };
     },
 
     startRound: function () {
@@ -159,12 +189,12 @@
       this.winner = null;
       this.hideOverlay();
 
-      var count = this.players.length;
-      var first = (this.round - 1) % count;
-      this.build.order = [];
-      for (var i = 0; i < count; i++) {
-        this.build.order.push((first + i) % count);
-      }
+      // Wer vorne liegt, baut zuerst - wer hinten liegt, hat das letzte
+      // Wort. Gleichstand entscheidet das Los. Wie Game::buildOrder() in PHP.
+      this.build.order = this.players
+        .map(function (p) { return { slot: p.slot, score: p.score, lot: Math.random() }; })
+        .sort(function (a, b) { return (b.score - a.score) || (a.lot - b.lot); })
+        .map(function (entry) { return entry.slot; });
       this.build.idx = 0;
       this.build.card = 0;
       this.build.rot = 0;
@@ -175,6 +205,10 @@
         this.players[p].removesLeft = REMOVES_PER_TURN;
       }
       this.build.deleting = false;
+      // Abgelaufene Grabsteine raus, der Rest gilt fuer diese Runde.
+      var round = this.round;
+      this.graves = (this.graves || []).filter(function (g) { return g.until >= round; });
+      this.level.graves = this.graves;
       // Bruchbloecke heilen, Geschosse und Partikel der Vorrunde raus.
       this.level.resetRound();
       this.parkPlayers();
@@ -237,19 +271,31 @@
 
         this.build.canDelete = this.removesLeft(builder) > 0;
         if (this.build.deleting && !this.build.canDelete) { this.build.deleting = false; }
+        if (this.build.bombing && builder.hand[this.build.card] !== 'pu_bomb') { this.build.bombing = false; }
 
         var onBlock = this.level.cell(this.build.tx, this.build.ty);
         onBlock = !!(onBlock && onBlock.kind === 'block');
-        this.build.valid = this.build.deleting
-          ? onBlock
-          : this.level.canPlaceAt(this.build.tx, this.build.ty, this.selectedType());
+        if (this.build.bombing) {
+          this.build.valid = this.blastTargets(this.build.tx, this.build.ty).length > 0;
+        } else if (this.build.deleting) {
+          this.build.valid = onBlock;
+        } else {
+          this.build.valid = this.level.canPlaceAt(this.build.tx, this.build.ty, this.selectedType());
+        }
 
         var confirm = mouse.clicked || UDM.Input.wasPressed('Enter') || UDM.Input.wasPressed('Space');
         // Rechtsklick loescht direkt, ohne den Modus umzuschalten.
-        if (mouse.right && this.build.canDelete && onBlock) {
+        if (mouse.right && this.build.canDelete && onBlock && !this.build.bombing) {
           this.tryRemove(builder);
         } else if (confirm) {
-          if (this.build.deleting) { this.tryRemove(builder); } else { this.tryPlace(builder); }
+          if (this.build.bombing) { this.tryBomb(builder); }
+          else if (this.build.deleting) { this.tryRemove(builder); }
+          else { this.tryPlace(builder); }
+        }
+        if (UDM.Input.wasPressed('Escape')) {
+          this.build.bombing = false;
+          this.build.deleting = false;
+          this.renderHand();
         }
       } else {
         this.build.valid = false;
@@ -300,9 +346,24 @@
       var builder = this.activeBuilder();
       if (!builder || !builder.hand || index < 0 || index >= builder.hand.length) { return; }
       if (this.cfg.mode === 'online' && builder.slot !== this.mySlot) { return; }
+      var card = builder.hand[index];
+      if (this.isPowerUp(card)) {
+        if (card === 'pu_bomb') {
+          this.build.card = index;
+          this.build.bombing = !this.build.bombing;
+          this.build.deleting = false;
+          UDM.Audio.select();
+          this.setBanner(this.build.bombing ? 'Wähle das Feld für die Sprengladung' : '', 1.6);
+          this.renderHand();
+        } else {
+          this.usePower(builder, index, -1, -1);
+        }
+        return;
+      }
       this.build.card = index;
       this.build.rot = 0;
       this.build.deleting = false;
+      this.build.bombing = false;
       UDM.Audio.select();
       this.renderHand();
     },
@@ -318,16 +379,132 @@
       this.renderHand();
     },
 
+    /** Das ausgewaehlte Bauteil - Power-ups sind keine Bauteile. */
     selectedType: function () {
       var builder = this.activeBuilder();
       if (!builder || !builder.hand) { return null; }
-      return builder.hand[this.build.card] || null;
+      var card = builder.hand[this.build.card] || null;
+      if (card && this.isPowerUp(card)) {
+        // Auf die erste echte Bauteilkarte ausweichen.
+        for (var i = 0; i < builder.hand.length; i++) {
+          if (!this.isPowerUp(builder.hand[i])) { return builder.hand[i]; }
+        }
+        return null;
+      }
+      return card;
+    },
+
+    /** Index der gewaehlten Bauteilkarte (ueberspringt Power-ups). */
+    selectedIndex: function () {
+      var builder = this.activeBuilder();
+      var type = this.selectedType();
+      if (!builder || !type) { return -1; }
+      return builder.hand[this.build.card] === type ? this.build.card : builder.hand.indexOf(type);
+    },
+
+    /** Alle Bauteile, die eine Sprengladung um (tx, ty) erwischen wuerde. */
+    blastTargets: function (tx, ty) {
+      return this.level.blocks.filter(function (cell) {
+        return cell.tx <= tx + 1 && cell.tx + (cell.w || 1) - 1 >= tx - 1 &&
+          cell.ty <= ty + 1 && cell.ty + (cell.h || 1) - 1 >= ty - 1;
+      });
+    },
+
+    /**
+     * Power-up einsetzen. Lokal direkt, online ueber den Server
+     * (Game::usePower() in PHP rechnet dort dasselbe).
+     */
+    usePower: function (builder, index, tx, ty) {
+      var card = builder.hand[index];
+      var meta = this.cardMeta(card);
+
+      if (this.cfg.mode === 'online') {
+        var self = this;
+        this.build.busy = true;
+        this.net.call('power', { card: index, x: tx, y: ty }).then(function (data) {
+          self.build.busy = false;
+          self.build.bombing = false;
+          self.build.card = 0;
+          UDM.Audio.bounce();
+          self.setBanner(meta.name + '!', 1.4);
+          self.applyServerState(data.state);
+        }).catch(function (err) {
+          self.build.busy = false;
+          UDM.Audio.deny();
+          self.setBanner(err.message || 'Das hat nicht geklappt.', 1.8);
+          if (err.state) { self.applyServerState(err.state); }
+        });
+        return;
+      }
+
+      if (card === 'pu_extra') {
+        builder.placesLeft = this.placesLeft(builder) + 1;
+      } else if (card === 'pu_remove') {
+        builder.removesLeft = this.removesLeft(builder) + 1;
+      } else if (card === 'pu_redraw') {
+        builder.hand = [card].concat(this.dealBlocks(Math.max(1, builder.hand.length - 1)));
+        index = 0;
+      } else if (card === 'pu_bomb') {
+        var targets = this.blastTargets(tx, ty);
+        if (!targets.length) {
+          UDM.Audio.deny();
+          this.setBanner('Da ist nichts zu sprengen', 1.2);
+          return;
+        }
+        var self2 = this;
+        targets.forEach(function (cell) {
+          self2.addGrave(cell);
+          self2.level.burst(cell.tx * TILE + TILE / 2, cell.ty * TILE + TILE / 2, '#ffb347', 16);
+          self2.level.removeBlock(cell);
+        });
+        UDM.Render.kick(8);
+        UDM.Audio.die();
+      }
+
+      builder.hand.splice(index, 1);
+      this.build.card = 0;
+      this.build.bombing = false;
+      UDM.Audio.bounce();
+      this.setBanner(meta.name + '!', 1.4);
+      this.updateHud();
+    },
+
+    tryBomb: function (builder) {
+      if (this.build.busy) { return; }
+      var index = builder.hand.indexOf('pu_bomb');
+      if (index < 0) { this.build.bombing = false; return; }
+      if (!this.blastTargets(this.build.tx, this.build.ty).length) {
+        UDM.Audio.deny();
+        this.setBanner('Da ist nichts zu sprengen', 1.2);
+        return;
+      }
+      this.usePower(builder, index, this.build.tx, this.build.ty);
+    },
+
+    /** Zug vorzeitig beenden - lokal wie online. */
+    endTurn: function () {
+      var builder = this.activeBuilder();
+      if (!builder || this.phase !== 'build') { return; }
+      if (this.cfg.mode === 'online') {
+        if (builder.slot !== this.mySlot) { return; }
+        var self = this;
+        this.net.call('skip').then(function (data) { self.applyServerState(data.state); }).catch(function () {});
+        return;
+      }
+      builder.hand = [];
+      builder.placesLeft = 0;
+      this.advanceBuild();
     },
 
     tryPlace: function (builder) {
       if (this.build.busy) { return; }
       var type = this.selectedType();
       if (!type) { return; }
+      if (this.level.blockedByGrave(this.build.tx, this.build.ty, type)) {
+        UDM.Audio.deny();
+        this.setBanner('Hier wurde eben erst ' + this.cardMeta(type).name + ' entfernt – nächste Runde wieder', 2);
+        return;
+      }
       if (!this.level.canPlaceAt(this.build.tx, this.build.ty, type)) {
         UDM.Audio.deny();
         this.setBanner('Da passt nichts hin!', 1.2);
@@ -347,19 +524,33 @@
         rot: this.build.rot,
         ownerSlot: builder.slot
       });
-      builder.hand.splice(this.build.card, 1);
+      builder.hand.splice(this.selectedIndex(), 1);
       builder.placesLeft = this.placesLeft(builder) - 1;
       this.build.card = 0;
       this.build.rot = 0;
       UDM.Audio.place();
       UDM.Render.kick(2);
 
-      if (builder.placesLeft <= 0 || !builder.hand.length) {
+      // Das letzte Bauteil beendet den Zug - wie Game::place() in PHP.
+      var self = this;
+      var blocksLeft = builder.hand.some(function (c) { return !self.isPowerUp(c); });
+      if (builder.placesLeft <= 0 || !blocksLeft) {
         this.advanceBuild();
       } else {
         this.setBanner('Noch ein Bauteil', 1.1);
         this.updateHud();
       }
+    },
+
+    /**
+     * Lokaler Grabstein: derselbe Typ darf bis Ende der naechsten Runde nicht
+     * wieder dorthin. Wie Game::addGrave() in PHP.
+     */
+    addGrave: function (cell) {
+      if (!cell || cell.kind !== 'block') { return; }
+      this.graves = this.graves || [];
+      this.graves.push({ type: cell.type, x: cell.tx, y: cell.ty, until: this.round + 1 });
+      this.level.graves = this.graves;
     },
 
     /** Entfernt ein liegendes Bauteil - kostet die Loeschung dieses Zugs. */
@@ -382,6 +573,7 @@
         return;
       }
 
+      this.addGrave(cell);
       this.level.removeBlockAt(this.build.tx, this.build.ty);
       builder.removesLeft = this.removesLeft(builder) - 1;
       this.build.deleting = false;
@@ -546,7 +738,7 @@
 
           if (p.killerSlot === p.slot) {
             delta -= 1;
-            reasons.push({ text: 'Eigengoal', points: -1 });
+            reasons.push({ text: 'Eigentor', points: -1 });
           }
         }
 
@@ -582,6 +774,10 @@
         if (p.killerBlock) { spent.push(p.killerBlock); }
         if (p.assistBlock) { spent.push(p.assistBlock); }
       });
+      var self = this;
+      this.level.blocks.forEach(function (cell) {
+        if (spent.indexOf(cell.id) >= 0) { self.addGrave(cell); }
+      });
       this.lastRound.spent = spent.length ? this.level.removeBlocksById(spent) : 0;
 
       // Drei Runden ohne Zieleinlauf: das Level ist zugebaut, alles raeumen.
@@ -591,6 +787,8 @@
         this.deadRounds = (this.deadRounds || 0) + 1;
         if (this.deadRounds >= 3) {
           this.deadRounds = 0;
+          this.graves = [];
+          this.level.graves = [];
           this.level.rebuild([]);
           this.lastRound.cleared = true;
         }
@@ -654,7 +852,20 @@
         };
       }
 
-      this.net.sync(pos).then(function (data) {
+      var build = null;
+      var builder = this.activeBuilder();
+      if (this.phase === 'build' && builder && builder.slot === this.mySlot) {
+        build = {
+          card: this.selectedIndex(),
+          rot: this.build.rot,
+          deleting: this.build.deleting,
+          bombing: this.build.bombing,
+          tx: this.build.tx,
+          ty: this.build.ty
+        };
+      }
+
+      this.net.sync(pos, build).then(function (data) {
         self.polling = false;
         self.applyServerState(data.state);
       }).catch(function () {
@@ -714,6 +925,7 @@
     },
 
     syncLevel: function (state) {
+      if (this.level) { this.level.graves = state.graves || []; }
       var signature = state.levelId + '|' + state.blocks.length +
         (state.blocks.length ? '|' + state.blocks[state.blocks.length - 1].id : '');
       if (signature === this.blockSignature) { return; }
@@ -728,6 +940,7 @@
         this.dom['level-label'].textContent = this.level.def.name;
       }
       this.level.rebuild(state.blocks);
+      this.level.graves = state.graves || [];
     },
 
     syncPlayers: function (state) {
@@ -746,7 +959,7 @@
         player.connected = info.connected;
         player.placedThisRound = info.placed;
         player.remote = info.slot !== this.mySlot;
-        if (info.you) { player.hand = info.hand || []; }
+        if (info.you || (info.hand && info.hand.length)) { player.hand = info.hand || []; }
         if (player.remote && state.phase === 'party' && info.pos) {
           if (player.x === 0 && player.y === 0) {
             player.x = info.pos.x;
@@ -761,7 +974,7 @@
       var self = this;
       this.build.busy = true;
       this.net.call('place', {
-        card: this.build.card,
+        card: this.selectedIndex(),
         x: this.build.tx,
         y: this.build.ty,
         rot: this.build.rot
@@ -894,7 +1107,11 @@
         if (this.phase === 'party') {
           status = p.finished ? 'im Ziel' : (p.alive ? '…' : (UDM.DEATH_LABELS[p.cause] || 'tot'));
         } else if (this.phase === 'build') {
-          status = p.placedThisRound || (this.cfg.mode !== 'online' && this.hasBuilt(p)) ? 'fertig' : 'baut noch';
+          var position = this.buildOrderSlots().indexOf(p.slot) + 1;
+          var built = p.placedThisRound || (this.cfg.mode !== 'online' && this.hasBuilt(p));
+          if (built) { status = 'fertig'; }
+          else if (builder && builder.slot === p.slot) { status = 'baut gerade'; }
+          else { status = position > 0 ? 'baut als ' + position + '.' : 'baut noch'; }
         } else if (p.connected === false) {
           status = 'offline';
         }
@@ -909,14 +1126,42 @@
       this.dom.players.innerHTML = html;
     },
 
+    /** Bau-Reihenfolge dieser Runde als Liste von Spielerplaetzen. */
+    buildOrderSlots: function () {
+      if (this.cfg.mode === 'online') {
+        return (this.server && this.server.buildOrder) || [];
+      }
+      return this.build.order || [];
+    },
+
     hasBuilt: function (player) {
       var position = this.build.order.indexOf(player.slot);
       return position >= 0 && position < this.build.idx;
     },
 
+    /**
+     * Auswahl des Bauenden: bei mir aus dem eigenen Zustand, bei anderen
+     * aus dem, was der Server von ihm weitergibt.
+     */
+    buildView: function (builder, mine) {
+      if (mine) {
+        return {
+          card: this.selectedIndex(),
+          rot: this.build.rot,
+          deleting: this.build.deleting,
+          bombing: this.build.bombing,
+          tx: this.build.tx,
+          ty: this.build.ty
+        };
+      }
+      var remote = this.server && this.server.buildView;
+      if (remote && remote.slot === builder.slot) { return remote; }
+      return { card: -1, rot: 0, deleting: false, bombing: false, tx: -1, ty: -1 };
+    },
+
     renderHand: function () {
       var builder = this.activeBuilder();
-      var mine = builder && (this.cfg.mode !== 'online' || builder.slot === this.mySlot);
+      var mine = !!builder && (this.cfg.mode !== 'online' || builder.slot === this.mySlot);
 
       if (this.phase !== 'build' || !builder) {
         this.dom.hand.innerHTML = '';
@@ -928,81 +1173,76 @@
       var removes = this.removesLeft(builder);
       var quota = '<span class="quota"><b>' + places + '</b> Bauteil' + (places === 1 ? '' : 'e') +
         ' · <b>' + removes + '</b> Löschung' + (removes === 1 ? '' : 'en') + ' übrig</span>';
+      var name = '<strong style="color:' + builder.color + '">' + UDM.escapeHtml(builder.name) + '</strong>';
+      this.dom['turn-info'].innerHTML = (mine ? name + ' ist am Zug' : name + ' baut gerade …') + '<br>' + quota;
 
-      this.dom['turn-info'].innerHTML = mine
-        ? '<strong style="color:' + builder.color + '">' + UDM.escapeHtml(builder.name) +
-          '</strong> ist am Zug<br>' + quota
-        : '<strong style="color:' + builder.color + '">' + UDM.escapeHtml(builder.name) + '</strong> baut gerade …';
-
-      if (!mine) {
-        this.dom.hand.innerHTML = '';
+      var view = this.buildView(builder, mine);
+      var hand = builder.hand || [];
+      if (!hand.length) {
+        this.dom.hand.innerHTML = mine ? '' : '<span class="muted small">Karten werden gezogen …</span>';
         return;
       }
 
-      var cards = this.cfg.cards;
       var html = '';
-      var hand = builder.hand || [];
+      var tag = mine ? 'button' : 'div';
       for (var i = 0; i < hand.length; i++) {
         var id = hand[i];
-        var meta = cards[id] || { name: id, desc: '' };
-        var selected = (i === this.build.card && !this.build.deleting) ? ' selected' : '';
-        html += '<button class="card' + selected + '" data-card="' + i + '" title="' +
-          UDM.escapeHtml(meta.desc) + '">' +
-          '<span class="ckey">' + (i + 1) + '</span>' +
+        var meta = this.cardMeta(id);
+        var power = this.isPowerUp(id);
+        var selected = !view.deleting && (power ? (id === 'pu_bomb' && view.bombing) : (i === view.card && !view.bombing));
+        html += '<' + tag + ' class="card' + (power ? ' power' : '') + (selected ? ' selected' : '') +
+          (mine ? '' : ' spectate') + '"' + (mine ? ' data-card="' + i + '"' : '') +
+          ' title="' + UDM.escapeHtml(meta.desc) + '">' +
+          '<span class="ckey">' + (power ? '★' : '') + (mine ? (i + 1) : '') + '</span>' +
           '<canvas class="cicon" width="40" height="40" data-type="' + id + '"></canvas>' +
           '<span class="cname">' + UDM.escapeHtml(meta.name) + '</span>' +
-          '</button>';
+          '</' + tag + '>';
       }
 
-      var type = this.selectedType();
+      var type = this.typeAt(hand, view.card);
       var rotatable = type && UDM.BLOCKS[type] && UDM.BLOCKS[type].rotatable;
-      var dirLabel = ['nach oben', 'nach rechts', 'nach unten', 'nach links'][this.build.rot];
-      html += '<button class="card rotate' + (rotatable ? '' : ' disabled') +
-        '" data-card="-1" data-rotate="1" title="Bauteil drehen (Taste R)">' +
-        '<span class="ckey">R</span><span class="rot-icon" style="transform:rotate(' +
-        (this.build.rot * 90 - 90) + 'deg)">➤</span>' +
-        '<span class="cname">' + (rotatable ? dirLabel : 'Drehen') + '</span></button>';
+      var dirLabel = ['nach oben', 'nach rechts', 'nach unten', 'nach links'][view.rot || 0];
 
-      html += '<button class="card erase' + (this.build.deleting ? ' selected' : '') +
-        (removes > 0 ? '' : ' disabled') + '" data-card="-2" data-erase="1"' +
-        ' title="Ein liegendes Bauteil entfernen (Taste X oder Rechtsklick)">' +
-        '<span class="ckey">X</span><span class="rot-icon">✖</span>' +
-        '<span class="cname">Löschen</span></button>';
+      if (mine) {
+        html += '<button class="card rotate' + (rotatable ? '' : ' disabled') +
+          '" data-card="-1" data-rotate="1" title="Bauteil drehen (Taste R)">' +
+          '<span class="ckey">R</span><span class="rot-icon" style="transform:rotate(' +
+          ((view.rot || 0) * 90 - 90) + 'deg)">➤</span>' +
+          '<span class="cname">' + (rotatable ? dirLabel : 'Drehen') + '</span></button>';
+
+        html += '<button class="card erase' + (view.deleting ? ' selected' : '') +
+          (removes > 0 ? '' : ' disabled') + '" data-card="-2" data-erase="1"' +
+          ' title="Ein liegendes Bauteil entfernen (Taste X oder Rechtsklick)">' +
+          '<span class="ckey">X</span><span class="rot-icon">✖</span>' +
+          '<span class="cname">Löschen</span></button>';
+
+        html += '<button class="card endturn" data-card="-3" data-endturn="1"' +
+          ' title="Zug beenden, ohne weitere Bauteile zu setzen">' +
+          '<span class="rot-icon">⏭</span><span class="cname">Zug beenden</span></button>';
+      } else {
+        // Zuschauer sehen, was der Bauende gerade vorhat.
+        var doing = view.bombing ? 'zielt mit der Sprengladung'
+          : view.deleting ? 'sucht etwas zum Löschen'
+          : type ? 'hält ' + UDM.escapeHtml(this.cardMeta(type).name) + (rotatable ? ', ' + dirLabel : '')
+          : 'überlegt …';
+        html += '<div class="spectate-note">' + doing + '</div>';
+      }
 
       this.dom.hand.innerHTML = html;
-      this.paintCardIcons();
+      this.paintCardIcons(view.rot || 0);
+    },
+
+    typeAt: function (hand, index) {
+      var card = hand[index];
+      return card && !this.isPowerUp(card) ? card : null;
     },
 
     /** Malt die Mini-Vorschau in die Kartenbuttons. */
-    paintCardIcons: function () {
+    paintCardIcons: function (rot) {
       var icons = this.dom.hand.querySelectorAll('canvas.cicon');
       for (var i = 0; i < icons.length; i++) {
-        var canvas = icons[i];
-        var type = canvas.getAttribute('data-type');
-        var spec = UDM.BLOCKS[type] || {};
-        var bw = spec.w || 1;
-        var bh = spec.h || 1;
-        // Grosse Bauteile so verkleinern, dass sie komplett ins Symbol passen.
-        var scale = Math.min(1, 1 / Math.max(bw, bh));
-        var ictx = canvas.getContext('2d');
-        ictx.clearRect(0, 0, 40, 40);
-        ictx.save();
-        ictx.translate(20 - (bw * 32 * scale) / 2, 20 - (bh * 32 * scale) / 2);
-        ictx.scale(scale, scale);
-        UDM.Render.drawBlock(ictx, {
-          type: type,
-          tx: 0,
-          ty: 0,
-          w: bw,
-          h: bh,
-          rot: spec.rotatable ? this.build.rot : 0,
-          spec: spec,
-          broken: false,
-          touch: -1,
-          shake: 0,
-          id: 1
-        }, 0, 0, this.time);
-        ictx.restore();
+        UDM.Render.drawCardIcon(icons[i], icons[i].getAttribute('data-type'),
+          rot === undefined ? this.build.rot : rot, this.time);
       }
     },
 
@@ -1018,9 +1258,17 @@
 
     renderHints: function () {
       var html = '';
-      if (this.phase === 'build') {
-        html = '<span><b>Maus</b> platzieren</span><span><b>1-4</b> Bauteil</span>' +
-          '<span><b>R</b> drehen</span><span><b>X</b> / Rechtsklick löschen</span>';
+      var builder = this.activeBuilder();
+      if (this.phase === 'build' && this.cfg.mode === 'online' && builder && builder.slot !== this.mySlot) {
+        var me = this.playerBySlot(this.mySlot);
+        var pos = this.buildOrderSlots().indexOf(this.mySlot) + 1;
+        html = me && me.placedThisRound
+          ? '<span>Du hast schon gebaut – jetzt heißt es zuschauen.</span>'
+          : '<span>Du baust als <b>' + pos + '.</b> – bis dahin zuschauen.</span>';
+      } else if (this.phase === 'build') {
+        html = '<span><b>Maus</b> platzieren</span><span><b>1-4</b> Karte</span>' +
+          '<span><b>R</b> drehen</span><span><b>X</b> / Rechtsklick löschen</span>' +
+          '<span>★ Power-ups vor dem letzten Bauteil</span>';
       } else if (this.cfg.mode === 'online') {
         html = '<span><b>' + UDM.SOLO_LAYOUT.label + '</b></span><span>Wandsprung: an der Wand springen</span>';
       } else {
@@ -1044,29 +1292,101 @@
       this.dom.overlay.innerHTML = '';
     },
 
+    /**
+     * Lobby: Mitspieler, Welt und Zielpunkte. Der Gastgeber waehlt die Welt
+     * per Vorschaubild, alle anderen sehen live, was gewaehlt ist.
+     */
     showLobby: function () {
       var state = this.server;
       if (!state) { return; }
+
+      // Nur neu aufbauen, wenn sich etwas geaendert hat - sonst flackern
+      // die Vorschaubilder bei jedem Abgleich.
+      var signature = JSON.stringify([
+        state.players.map(function (p) { return [p.slot, p.name, p.char, p.host, p.connected]; }),
+        state.levelId, state.randomLevel, state.targetScore, state.isHost
+      ]);
+      if (signature === this.lobbySignature && this.dom.overlay.querySelector('.lobby')) { return; }
+      this.lobbySignature = signature;
+
       var rows = state.players.map(function (p) {
-        return '<li style="--c:' + UDM.SLOT_COLORS[p.slot % 3] + '">' +
+        return '<li style="--c:' + UDM.slotColor(p.slot) + '">' +
           '<span class="pdot"></span>' + UDM.escapeHtml(p.name) +
           (p.host ? ' <em>(Gastgeber)</em>' : '') +
           (p.you ? ' <em>(du)</em>' : '') +
           ' <small>' + (UDM.CHARACTERS[p.char] ? UDM.CHARACTERS[p.char].label : p.char) + '</small></li>';
       }).join('');
 
+      var levelName = state.randomLevel ? 'Zufall' : this.levelName(state.levelId);
       var canStart = state.isHost && state.players.length >= 2;
+      var settings;
+
+      if (state.isHost) {
+        settings = '<label class="lobby-label">Welt</label>' +
+          '<div class="level-picker lobby-picker">' +
+          '<button type="button" class="lvl' + (state.randomLevel ? ' on' : '') + '" data-action="level" data-level="">' +
+          '<span class="lvl-thumb lvl-random">?</span><span class="lvl-name">Zufall</span></button>' +
+          this.cfg.levels.map(function (def) {
+            var on = !state.randomLevel && def.id === state.levelId;
+            return '<button type="button" class="lvl' + (on ? ' on' : '') + '" data-action="level" data-level="' +
+              def.id + '" title="' + UDM.escapeHtml(def.desc || '') + '">' +
+              '<canvas class="lvl-thumb" width="160" height="92" data-preview="' + def.id + '"></canvas>' +
+              '<span class="lvl-name">' + UDM.escapeHtml(def.name) + '</span></button>';
+          }).join('') +
+          '</div>' +
+          '<label class="lobby-label" for="lobby-target">Punkte zum Sieg</label>' +
+          '<input type="number" id="lobby-target" min="3" max="30" value="' + state.targetScore + '">';
+      } else {
+        settings = '<p class="lobby-settings">Welt: <b>' + UDM.escapeHtml(levelName) + '</b>' +
+          ' · Ziel: <b>' + state.targetScore + ' Punkte</b></p>';
+      }
+
       this.showOverlay(
+        '<div class="lobby">' +
         '<h2>Raum ' + UDM.escapeHtml(state.code) + '</h2>' +
-        '<p class="muted">Code weitergeben – bis zu 3 Spieler.<br>' +
-        '<span class="small">Level: ' + UDM.escapeHtml(this.level.def.name) +
-        ' · Ziel: ' + state.targetScore + ' Punkte</span></p>' +
+        '<p class="muted">Code weitergeben – bis zu 4 Spieler.</p>' +
         '<ul class="lobby-list">' + rows + '</ul>' +
+        settings +
         (state.isHost
           ? '<button class="big" data-action="start"' + (canStart ? '' : ' disabled') + '>Spiel starten</button>' +
             (canStart ? '' : '<p class="muted small">Mindestens 2 Spieler nötig.</p>')
-          : '<p class="muted">Warten, bis der Gastgeber startet …</p>')
+          : '<p class="muted">Warten, bis der Gastgeber startet …</p>') +
+        '</div>',
+        'lobby-overlay'
       );
+
+      var self = this;
+      this.dom.overlay.querySelectorAll('canvas[data-preview]').forEach(function (canvas) {
+        var def = self.levelDef(canvas.getAttribute('data-preview'));
+        if (def) { UDM.Render.drawPreview(canvas, def); }
+      });
+      var target = document.getElementById('lobby-target');
+      if (target) {
+        target.addEventListener('change', function () { self.sendSettings(null, parseInt(target.value, 10)); });
+      }
+    },
+
+    levelDef: function (id) {
+      for (var i = 0; i < this.cfg.levels.length; i++) {
+        if (this.cfg.levels[i].id === id) { return this.cfg.levels[i]; }
+      }
+      return null;
+    },
+
+    levelName: function (id) {
+      var def = this.levelDef(id);
+      return def ? def.name : id;
+    },
+
+    /** Gastgeber aendert Welt oder Zielpunkte (null = unveraendert). */
+    sendSettings: function (levelId, target) {
+      if (!this.server || !this.server.isHost) { return; }
+      var self = this;
+      var level = levelId !== null ? levelId : (this.server.randomLevel ? '' : this.server.levelId);
+      var points = isNaN(target) || target === null ? this.server.targetScore : target;
+      this.net.call('settings', { level: level, target: points }).then(function (data) {
+        self.applyServerState(data.state);
+      }).catch(function (err) { self.setBanner(err.message, 2); });
     },
 
     showScore: function () {
@@ -1080,7 +1400,7 @@
                 ' <b>' + (r.points > 0 ? '+' : '') + r.points + '</b></span>';
             }).join('')
           : '<span class="reason muted">' + (e.finished ? '' : UDM.escapeHtml(UDM.DEATH_LABELS[e.cause] || 'nichts geholt')) + '</span>';
-        return '<tr style="--c:' + UDM.SLOT_COLORS[e.slot % 3] + '">' +
+        return '<tr style="--c:' + UDM.slotColor(e.slot) + '">' +
           '<td><span class="pdot"></span>' + UDM.escapeHtml(e.name) + '</td>' +
           '<td class="reasons">' + reasons + '</td>' +
           '<td class="delta' + (e.delta === 0 ? ' zero' : '') + '">' +
@@ -1113,17 +1433,20 @@
 
     showWinner: function () {
       var w = this.winner || {};
-      var color = UDM.SLOT_COLORS[(w.slot || 0) % 3];
+      var color = UDM.slotColor(w.slot || 0);
       var rows = (this.lastRound ? this.lastRound.entries : []).slice()
         .sort(function (a, b) { return b.total - a.total; })
         .map(function (e) {
-          return '<tr style="--c:' + UDM.SLOT_COLORS[e.slot % 3] + '"><td><span class="pdot"></span>' +
+          return '<tr style="--c:' + UDM.slotColor(e.slot) + '"><td><span class="pdot"></span>' +
             UDM.escapeHtml(e.name) + '</td><td class="total">' + e.total + '</td></tr>';
         }).join('');
 
       var again = (this.cfg.mode !== 'online' || (this.server && this.server.isHost))
-        ? '<button class="big" data-action="restart">Nochmal spielen</button>'
-        : '<p class="muted">Der Gastgeber kann ein neues Match starten.</p>';
+        ? '<button class="big" data-action="restart">Nochmal spielen</button>' +
+          '<p class="muted small">' + (this.cfg.mode === 'online'
+            ? 'Zurück in die Lobby: Welt und Punkte neu wählen, weitere Mitspieler können beitreten.'
+            : 'Zurück zu den Einstellungen – Welt, Spieler und Punkte lassen sich dort ändern.') + '</p>'
+        : '<p class="muted">Der Gastgeber wählt gleich die nächste Welt.</p>';
 
       this.showOverlay(
         '<h2 style="color:' + color + '">🏆 ' + UDM.escapeHtml(w.name || '?') + ' gewinnt!</h2>' +
@@ -1134,12 +1457,15 @@
     },
 
     showRules: function () {
-      var cards = this.cfg.cards;
-      var list = Object.keys(cards).map(function (id) {
-        return '<li><canvas class="cicon" width="40" height="40" data-type="' + id + '"></canvas>' +
-          '<div><b>' + UDM.escapeHtml(cards[id].name) + '</b><br><small>' +
-          UDM.escapeHtml(cards[id].desc) + '</small></div></li>';
-      }).join('');
+      var item = function (catalog) {
+        return Object.keys(catalog).map(function (id) {
+          return '<li><canvas class="cicon" width="40" height="40" data-type="' + id + '"></canvas>' +
+            '<div><b>' + UDM.escapeHtml(catalog[id].name) + '</b><br><small>' +
+            UDM.escapeHtml(catalog[id].desc) + '</small></div></li>';
+        }).join('');
+      };
+      var list = item(this.cfg.cards);
+      var powers = item(this.cfg.powerups || {});
 
       this.showOverlay(
         '<h2>So läuft es</h2>' +
@@ -1147,7 +1473,8 @@
         '<li><b>Jedes Level ist ohne ein einziges Bauteil zu schaffen.</b> ' +
         'Alles, was gebaut wird, ist ein Hindernis \u2013 keine Hilfe.</li>' +
         '<li><b>Bauphase:</b> Der Reihe nach setzt jeder <b>ein Bauteil</b> ' +
-        'und darf dabei <b>ein liegendes entfernen</b> (Taste X oder Rechtsklick).</li>' +
+        'und darf dabei <b>ein liegendes entfernen</b> (Taste X oder Rechtsklick). ' +
+        'Wer vorne liegt, baut zuerst – wer hinten liegt, hat das letzte Wort.</li>' +
         '<li><b>Partyphase:</b> Alle rennen gleichzeitig los und versuchen, die Fahne zu erreichen.</li>' +
         '<li><b>Punkte:</b> Ziel erreicht <b>+1</b>, erster im Ziel <b>+1</b> extra, ' +
         'einziger im Ziel <b>+2</b> extra, ein Gegner stirbt an deinem Bauteil <b>+1</b>, ' +
@@ -1160,6 +1487,9 @@
         '<li>Kommt <b>drei Runden lang niemand</b> ins Ziel, wird das Level komplett ger\u00e4umt.</li>' +
         '</ol>' +
         '<h3>Bauteile</h3><ul class="cardlist">' + list + '</ul>' +
+        '<h3>Power-ups</h3><p class="muted small">Liegen manchmal als vierte Karte auf der Hand. ' +
+        'Anklicken setzt sie ein – am besten vor dem letzten Bauteil, denn das beendet den Zug.</p>' +
+        '<ul class="cardlist">' + powers + '</ul>' +
         '<button class="big" data-action="close">Alles klar</button>',
         'rules'
       );
@@ -1169,22 +1499,7 @@
     paintOverlayIcons: function () {
       var icons = this.dom.overlay.querySelectorAll('canvas.cicon');
       for (var i = 0; i < icons.length; i++) {
-        var canvas = icons[i];
-        var type = canvas.getAttribute('data-type');
-        var spec = UDM.BLOCKS[type] || {};
-        var bw = spec.w || 1;
-        var bh = spec.h || 1;
-        var scale = Math.min(1, 1 / Math.max(bw, bh));
-        var ictx = canvas.getContext('2d');
-        ictx.clearRect(0, 0, 40, 40);
-        ictx.save();
-        ictx.translate(20 - (bw * 32 * scale) / 2, 20 - (bh * 32 * scale) / 2);
-        ictx.scale(scale, scale);
-        UDM.Render.drawBlock(ictx, {
-          type: type, tx: 0, ty: 0, w: bw, h: bh, rot: 1,
-          spec: spec, broken: false, touch: -1, shake: 0, id: 1
-        }, 0, 0, this.time);
-        ictx.restore();
+        UDM.Render.drawCardIcon(icons[i], icons[i].getAttribute('data-type'), 1, this.time);
       }
     },
 
@@ -1196,7 +1511,22 @@
       );
     },
 
-    onOverlayAction: function (action) {
+    /** Menue mit allen aktuellen Einstellungen vorausgefuellt. */
+    settingsUrl: function () {
+      var params = [
+        'tab=local',
+        'players=' + this.players.length,
+        'level=' + encodeURIComponent(this.cfg.levelId || ''),
+        'target=' + this.targetScore
+      ];
+      this.players.forEach(function (p, i) {
+        params.push('n' + i + '=' + encodeURIComponent(p.name));
+        params.push('c' + i + '=' + encodeURIComponent(p.char));
+      });
+      return 'index.php?' + params.join('&');
+    },
+
+    onOverlayAction: function (action, target) {
       var self = this;
       if (action === 'close') {
         if (this.phase === 'score') { this.showScore(); }
@@ -1224,14 +1554,12 @@
         if (this.cfg.mode === 'online') {
           this.net.call('ready').then(function (data) { self.applyServerState(data.state); }).catch(function () {});
         } else {
-          for (var i = 0; i < this.players.length; i++) { this.players[i].score = 0; }
-          this.level.rebuild([]);
-          this.deadRounds = 0;
-          this.round = 0;
-          this.winner = null;
-          this.lastRound = null;
-          this.startRound();
+          global.location.href = this.settingsUrl();
         }
+        return;
+      }
+      if (action === 'level') {
+        this.sendSettings(target.getAttribute('data-level'), null);
       }
     },
 
@@ -1266,7 +1594,8 @@
       }
 
       if (this.net && this.phase !== 'error') {
-        var interval = this.phase === 'party' ? 90 : 750;
+        // Partyphase: Positionen. Bauphase: Mauszeiger des Bauenden.
+        var interval = this.phase === 'party' ? 90 : (this.phase === 'build' ? 180 : 750);
         if (ts - this.lastPoll > interval) { this.pollNow(); }
       }
 
@@ -1275,26 +1604,56 @@
       requestAnimationFrame(function (next) { self.loop(next); });
     },
 
-    renderFrame: function () {
-      if (!this.level) { return; }
+    /**
+     * Was die Bauvorschau zeigen soll. Wer baut, sieht seinen eigenen
+     * Zustand; alle anderen sehen live, was der Bauende gerade vorhat.
+     */
+    buildOverlayState: function () {
       var builder = this.activeBuilder();
-      var showBuild = this.phase === 'build' && builder &&
-        (this.cfg.mode !== 'online' || builder.slot === this.mySlot);
+      if (this.phase !== 'build' || !builder) { return null; }
+      var mine = this.cfg.mode !== 'online' || builder.slot === this.mySlot;
 
-      UDM.Render.draw(this.ctx, {
-        level: this.level,
-        players: this.phase === 'lobby' ? [] : this.players,
-        time: this.time,
-        showNames: true,
-        build: showBuild ? {
+      if (mine) {
+        return {
           tx: this.build.tx,
           ty: this.build.ty,
           rot: this.build.rot,
           type: this.selectedType(),
           valid: this.build.valid,
           deleting: this.build.deleting,
+          bombing: this.build.bombing,
           color: builder.color
-        } : null
+        };
+      }
+
+      var view = this.buildView(builder, false);
+      if (view.tx < 0 || view.ty < 0) { return null; }
+      var type = this.typeAt(builder.hand || [], view.card);
+      var cell = this.level.cell(view.tx, view.ty);
+      var valid = view.bombing ? this.blastTargets(view.tx, view.ty).length > 0
+        : view.deleting ? !!(cell && cell.kind === 'block')
+        : !!type && this.level.canPlaceAt(view.tx, view.ty, type);
+      return {
+        tx: view.tx,
+        ty: view.ty,
+        rot: view.rot,
+        type: type,
+        valid: valid,
+        deleting: view.deleting,
+        bombing: view.bombing,
+        color: builder.color,
+        label: builder.name
+      };
+    },
+
+    renderFrame: function () {
+      if (!this.level) { return; }
+      UDM.Render.draw(this.ctx, {
+        level: this.level,
+        players: this.phase === 'lobby' ? [] : this.players,
+        time: this.time,
+        showNames: true,
+        build: this.buildOverlayState()
       });
 
       // Countdown und Zeitbalken.
