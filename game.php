@@ -80,6 +80,7 @@ $configJson = json_encode($config, JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASH
     </div>
     <div id="players"></div>
     <div id="topbar-right">
+      <button id="btn-giveup" type="button" class="hidden">Aufgeben</button>
       <button id="btn-sound" type="button">&#128266; Ton an</button>
       <button id="btn-rules" type="button">Regeln</button>
       <a id="btn-exit" href="index.php">Men&uuml;</a>

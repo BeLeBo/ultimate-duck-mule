@@ -243,6 +243,7 @@
         var cell = level.blocks[i];
         var x = cell.tx * TILE;
         var y = cell.ty * TILE;
+        var spanW = (cell.w || 1) * TILE;
 
         ctx.save();
         if (cell.spec.crumble && cell.touch >= 0 && !cell.broken) {
@@ -261,7 +262,7 @@
         if (!cell.broken && cell.ownerSlot >= 0) {
           ctx.fillStyle = UDM.SLOT_COLORS[cell.ownerSlot % 3];
           ctx.globalAlpha = 0.9;
-          ctx.fillRect(x + TILE - 6, y + 1, 5, 5);
+          ctx.fillRect(x + spanW - 6, y + 1, 5, 5);
           ctx.globalAlpha = 1;
         }
       }
@@ -270,21 +271,23 @@
     /** Kleiner Pfeil an der Kachelkante: in diese Richtung wirkt das Bauteil. */
     drawDirectionBadge: function (ctx, x, y, rot, strong) {
       var dir = DIRS[rot] || DIRS[0];
-      var inset = strong ? 4 : 6;
-      var cx = x + TILE / 2 + dir.dx * (TILE / 2 - inset);
-      var cy = y + TILE / 2 + dir.dy * (TILE / 2 - inset);
+      var inset = strong ? 6 : 7;
+      var cx = Math.round(x + TILE / 2 + dir.dx * (TILE / 2 - inset));
+      var cy = Math.round(y + TILE / 2 + dir.dy * (TILE / 2 - inset));
 
       var size = strong ? 8 : 6;
       ctx.save();
       ctx.translate(cx, cy);
       ctx.rotate(rot * Math.PI / 2);
 
-      // Heller Pfeil mit dunkler Kontur - so bleibt er auf jedem Bauteil lesbar.
+      // Heller Pfeil mit dunkler Kontur - so bleibt er auf jedem Bauteil
+      // lesbar. Die Form ist um ihre eigene Mitte gezeichnet, damit sie nicht
+      // gegenueber der Kachelkante verrutscht.
       ctx.beginPath();
-      ctx.moveTo(0, -size);
-      ctx.lineTo(size * 0.85, size * 0.5);
+      ctx.moveTo(0, -size * 0.75);
+      ctx.lineTo(size * 0.8, size * 0.45);
       ctx.lineTo(0, size * 0.1);
-      ctx.lineTo(-size * 0.85, size * 0.5);
+      ctx.lineTo(-size * 0.8, size * 0.45);
       ctx.closePath();
       ctx.fillStyle = strong ? '#ffe08a' : 'rgba(255,255,255,0.95)';
       ctx.strokeStyle = 'rgba(15,17,28,0.8)';
@@ -301,16 +304,47 @@
       if (fn) { fn.call(this, ctx, x, y, cell, time); }
     },
 
+    /** Massiver Block beliebiger Groesse mit Fugenraster. */
+    solidBlock: function (ctx, x, y, w, h, top, body, edge) {
+      ctx.fillStyle = edge;
+      ctx.fillRect(x, y, w, h);
+      ctx.fillStyle = body;
+      ctx.fillRect(x + 2, y + 2, w - 4, h - 6);
+      ctx.fillStyle = top;
+      ctx.fillRect(x + 2, y + 2, w - 4, 4);
+      ctx.fillStyle = 'rgba(0,0,0,0.18)';
+      ctx.fillRect(x + 2, y + h - 6, w - 4, 4);
+
+      // Fugen entlang des Kachelrasters, damit die Groesse ablesbar bleibt.
+      ctx.strokeStyle = 'rgba(0,0,0,0.16)';
+      ctx.beginPath();
+      for (var gx = TILE; gx < w; gx += TILE) {
+        ctx.moveTo(x + gx + 0.5, y + 3); ctx.lineTo(x + gx + 0.5, y + h - 3);
+      }
+      for (var gy = TILE; gy < h; gy += TILE) {
+        ctx.moveTo(x + 3, y + gy + 0.5); ctx.lineTo(x + w - 3, y + gy + 0.5);
+      }
+      ctx.stroke();
+
+      ctx.strokeStyle = edge;
+      ctx.strokeRect(x + 0.5, y + 0.5, w - 1, h - 1);
+    },
+
     blockPainters: {
       stone: function (ctx, x, y) {
-        ctx.fillStyle = '#9aa2b1';
-        ctx.fillRect(x, y, TILE, TILE);
-        ctx.fillStyle = '#b6bdc9';
-        ctx.fillRect(x + 2, y + 2, TILE - 4, TILE - 8);
-        ctx.fillStyle = 'rgba(0,0,0,0.18)';
-        ctx.fillRect(x + 2, y + TILE - 6, TILE - 4, 4);
-        ctx.strokeStyle = '#6f7787';
-        ctx.strokeRect(x + 0.5, y + 0.5, TILE - 1, TILE - 1);
+        this.solidBlock(ctx, x, y, TILE, TILE, '#c3cad6', '#b6bdc9', '#6f7787');
+      },
+      beam: function (ctx, x, y, cell) {
+        this.solidBlock(ctx, x, y, (cell.w || 3) * TILE, (cell.h || 1) * TILE,
+          '#d8b98a', '#c2a074', '#7c6243');
+      },
+      wall: function (ctx, x, y, cell) {
+        this.solidBlock(ctx, x, y, (cell.w || 1) * TILE, (cell.h || 3) * TILE,
+          '#b9c0cd', '#a4abba', '#646b7d');
+      },
+      slab: function (ctx, x, y, cell) {
+        this.solidBlock(ctx, x, y, (cell.w || 2) * TILE, (cell.h || 2) * TILE,
+          '#9ea6b4', '#8d94a3', '#5b6272');
       },
       ice: function (ctx, x, y) {
         ctx.fillStyle = 'rgba(150, 220, 255, 0.85)';
@@ -854,15 +888,17 @@
       return count;
     },
 
+    /** Pfeilspitze, deren Mitte genau auf (x, y) liegt. */
     arrowHead: function (ctx, x, y, dir, size) {
       var angle = Math.atan2(dir.dy, dir.dx);
       ctx.save();
       ctx.translate(x, y);
       ctx.rotate(angle);
+      // Schwerpunkt nach hinten schieben, sonst sitzt die Spitze versetzt.
       ctx.beginPath();
-      ctx.moveTo(size, 0);
-      ctx.lineTo(-size * 0.7, size * 0.7);
-      ctx.lineTo(-size * 0.7, -size * 0.7);
+      ctx.moveTo(size * 0.85, 0);
+      ctx.lineTo(-size * 0.85, size * 0.75);
+      ctx.lineTo(-size * 0.85, -size * 0.75);
       ctx.closePath();
       ctx.fill();
       ctx.restore();
@@ -1071,6 +1107,9 @@
         var x = build.tx * TILE;
         var y = build.ty * TILE;
         var ok = build.valid;
+        var ghostSpec = build.type ? UDM.BLOCKS[build.type] : null;
+        var spanW = ((ghostSpec && ghostSpec.w) || 1) * TILE;
+        var spanH = ((ghostSpec && ghostSpec.h) || 1) * TILE;
 
         if (build.deleting) {
           // Loeschvorschau: das getroffene Bauteil rot durchgestrichen.
@@ -1092,8 +1131,10 @@
               type: build.type,
               tx: build.tx,
               ty: build.ty,
+              w: (ghostSpec && ghostSpec.w) || 1,
+              h: (ghostSpec && ghostSpec.h) || 1,
               rot: build.rot,
-              spec: UDM.BLOCKS[build.type],
+              spec: ghostSpec,
               broken: false,
               touch: -1,
               shake: 0,
@@ -1107,11 +1148,11 @@
 
           ctx.lineWidth = 3;
           ctx.strokeStyle = ok ? build.color : 'rgba(255,80,80,0.95)';
-          ctx.strokeRect(x + 1.5, y + 1.5, TILE - 3, TILE - 3);
+          ctx.strokeRect(x + 1.5, y + 1.5, spanW - 3, spanH - 3);
           if (!ok) {
             ctx.beginPath();
-            ctx.moveTo(x + 6, y + 6); ctx.lineTo(x + TILE - 6, y + TILE - 6);
-            ctx.moveTo(x + TILE - 6, y + 6); ctx.lineTo(x + 6, y + TILE - 6);
+            ctx.moveTo(x + 6, y + 6); ctx.lineTo(x + spanW - 6, y + spanH - 6);
+            ctx.moveTo(x + spanW - 6, y + 6); ctx.lineTo(x + 6, y + spanH - 6);
             ctx.stroke();
           }
           ctx.lineWidth = 1;

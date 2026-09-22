@@ -9,6 +9,9 @@
    * vom Server (lib/Cards.php), gezeichnet wird in render.js. */
   UDM.BLOCKS = {
     stone: { solid: true },
+    beam: { solid: true, w: 3, h: 1 },
+    wall: { solid: true, w: 1, h: 3 },
+    slab: { solid: true, w: 2, h: 2 },
     ice: { solid: true, friction: 0.07, accel: 0.35 },
     bounce: { solid: true, bounce: true },
     crumble: { solid: true, crumble: 0.45 },
@@ -125,10 +128,15 @@
     this.refreshDynamics();
   };
 
-  /** Fuegt ein Bauteil hinzu. skipRefresh spart beim Massen-Aufbau Arbeit. */
+  /**
+   * Fuegt ein Bauteil hinzu. Mehrkachelige Teile (Balken, Mauer, Klotz)
+   * belegen mehrere Gitterzellen, die alle auf dasselbe Objekt zeigen.
+   * skipRefresh spart beim Massen-Aufbau Arbeit.
+   */
   Level.prototype.addBlock = function (block, skipRefresh) {
     var spec = UDM.BLOCKS[block.type];
     if (!spec || !this.inBounds(block.x, block.y)) { return null; }
+
     var cell = {
       kind: 'block',
       id: block.id,
@@ -136,13 +144,22 @@
       spec: spec,
       tx: block.x,
       ty: block.y,
+      w: spec.w || 1,
+      h: spec.h || 1,
       rot: spec.rotatable ? ((block.rot % 4) + 4) % 4 : 0,
       ownerSlot: typeof block.ownerSlot === 'number' ? block.ownerSlot : -1,
       broken: false,
       touch: -1,
       shake: 0
     };
-    this.cells[this.index(block.x, block.y)] = cell;
+
+    for (var dx = 0; dx < cell.w; dx++) {
+      for (var dy = 0; dy < cell.h; dy++) {
+        if (this.inBounds(block.x + dx, block.y + dy)) {
+          this.cells[this.index(block.x + dx, block.y + dy)] = cell;
+        }
+      }
+    }
     this.blocks.push(cell);
     if (!skipRefresh) { this.refreshDynamics(); }
     return cell;
@@ -152,12 +169,39 @@
   Level.prototype.removeBlockAt = function (tx, ty) {
     var cell = this.cell(tx, ty);
     if (!cell || cell.kind !== 'block') { return false; }
+    return this.removeBlock(cell);
+  };
 
-    this.cells[this.index(tx, ty)] = null;
+  /** Entfernt ein Bauteil samt aller belegten Kacheln. */
+  Level.prototype.removeBlock = function (cell) {
+    if (!cell || cell.kind !== 'block') { return false; }
+
+    for (var dx = 0; dx < (cell.w || 1); dx++) {
+      for (var dy = 0; dy < (cell.h || 1); dy++) {
+        var tx = cell.tx + dx;
+        var ty = cell.ty + dy;
+        if (this.inBounds(tx, ty) && this.cells[this.index(tx, ty)] === cell) {
+          this.cells[this.index(tx, ty)] = null;
+        }
+      }
+    }
+
     var index = this.blocks.indexOf(cell);
     if (index >= 0) { this.blocks.splice(index, 1); }
     this.refreshDynamics();
     return true;
+  };
+
+  /** Entfernt alle Bauteile mit diesen Kennungen (z.B. nach einem Kill). */
+  Level.prototype.removeBlocksById = function (ids) {
+    var removed = 0;
+    for (var i = this.blocks.length - 1; i >= 0; i--) {
+      if (ids.indexOf(this.blocks[i].id) >= 0) {
+        this.removeBlock(this.blocks[i]);
+        removed++;
+      }
+    }
+    return removed;
   };
 
   Level.prototype.hasBlockAt = function (tx, ty) {
@@ -165,8 +209,24 @@
     return !!cell;
   };
 
-  /** Darf hier gebaut werden? Muss zu Levels::blockedTiles() in PHP passen. */
-  Level.prototype.canPlaceAt = function (tx, ty) {
+  /**
+   * Darf hier gebaut werden? Prueft die komplette Grundflaeche des Bauteils.
+   * Muss zu Game::canPlaceAt() und Levels::blockedTiles() in PHP passen.
+   */
+  Level.prototype.canPlaceAt = function (tx, ty, type) {
+    var spec = type ? UDM.BLOCKS[type] : null;
+    var w = (spec && spec.w) || 1;
+    var h = (spec && spec.h) || 1;
+
+    for (var dx = 0; dx < w; dx++) {
+      for (var dy = 0; dy < h; dy++) {
+        if (!this.tileFree(tx + dx, ty + dy)) { return false; }
+      }
+    }
+    return true;
+  };
+
+  Level.prototype.tileFree = function (tx, ty) {
     if (!this.inBounds(tx, ty)) { return false; }
     if (this.cell(tx, ty)) { return false; }
     var spawn = this.def.spawn;
@@ -199,7 +259,8 @@
           period: 1.7,
           phase: ((cell.id || i) * 0.37) % 1.7,
           fired: -1,
-          ownerSlot: cell.ownerSlot
+          ownerSlot: cell.ownerSlot,
+          blockId: cell.id
         });
       } else if (spec.fan) {
         this.buildStream(cell);
@@ -208,6 +269,7 @@
           rect: this.faceRect(cell, 12),
           cause: spec.deadly,
           ownerSlot: cell.ownerSlot,
+          blockId: cell.id,
           cell: cell
         });
       }
@@ -260,6 +322,7 @@
       period: Math.max(1.4, (amp * 2) / 55),
       phase: ((cell.id || 1) * 0.61) % 1,
       ownerSlot: cell.ownerSlot,
+      blockId: cell.id,
       x: vertical ? (cell.tx * TILE + TILE / 2) : mid,
       y: vertical ? mid : (cell.ty * TILE + TILE / 2),
       spin: 0
@@ -290,6 +353,7 @@
       period: 2 * Math.PI * Math.sqrt(length / 1900),
       phase: ((cell.id || 1) * 0.53) % 1,
       ownerSlot: cell.ownerSlot,
+      blockId: cell.id,
       angle: 0,
       x: cell.tx * TILE + TILE / 2,
       y: cell.ty * TILE + TILE / 2 + length
@@ -320,6 +384,8 @@
         dy: dir.dy,
         power: 1 - (step - 1) / (range + 1),
         cell: cell,
+        ownerSlot: cell.ownerSlot,
+        blockId: cell.id,
         step: step
       });
     }
@@ -425,7 +491,8 @@
       vx: dir.dx * 340,
       vy: dir.dy * 340,
       life: 4,
-      ownerSlot: shooter.ownerSlot
+      ownerSlot: shooter.ownerSlot,
+      blockId: shooter.blockId
     });
     UDM.Audio.shoot();
   };

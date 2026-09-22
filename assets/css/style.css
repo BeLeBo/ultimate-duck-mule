@@ -455,3 +455,15 @@ label { display: block; font-size: 13px; color: var(--muted); margin-bottom: 5px
   background: rgba(255, 95, 109, 0.18);
 }
 .card.erase .rot-icon { color: var(--bad); }
+
+/* Aufgeben-Knopf im Kopfbereich */
+#btn-giveup {
+  background: rgba(255, 95, 109, 0.18) !important;
+  border-color: rgba(255, 95, 109, 0.5) !important;
+  color: #ffb3ba !important;
+}
+#btn-giveup:hover { background: rgba(255, 95, 109, 0.3) !important; }
+
+/* Overlay: Knopf braucht Abstand nach oben und unten */
+.overlay .panel .big { margin: 6px 0 4px; }
+.overlay .panel .big + p { margin-top: 12px; margin-bottom: 0; }

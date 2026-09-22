@@ -12,10 +12,27 @@ require_once __DIR__ . '/lib/Levels.php';
 require_once __DIR__ . '/lib/Cards.php';
 require_once __DIR__ . '/lib/View.php';
 
+require_once __DIR__ . '/lib/Game.php';
+
 // Vom Server berechnete Sperrflaechen - der Client muss zum selben Ergebnis kommen.
 $blocked = [];
+$bigOk = [];
 foreach (Levels::all() as $level) {
     $blocked[$level['id']] = array_keys(Levels::blockedTiles($level['id']));
+
+    // Und fuer die mehrkacheligen Bauteile: wo darf ihr Ursprung liegen?
+    $room = ['levelId' => $level['id'], 'blocks' => []];
+    foreach (['beam', 'wall', 'slab'] as $type) {
+        $okTiles = [];
+        for ($x = 0; $x < Levels::COLS; $x++) {
+            for ($y = 0; $y < Levels::ROWS; $y++) {
+                if (Game::canPlaceAt($room, $x, $y, $type)) {
+                    $okTiles[] = $x . ',' . $y;
+                }
+            }
+        }
+        $bigOk[$level['id']][$type] = $okTiles;
+    }
 }
 ?>
 <!DOCTYPE html>
@@ -46,7 +63,10 @@ foreach (Levels::all() as $level) {
   <p style="margin-top:16px"><a href="index.php">&larr; zurück zum Menü</a></p>
 </div>
 
-<script>window.UDM_BLOCKED = <?= json_encode($blocked) ?>;</script>
+<script>
+window.UDM_BLOCKED = <?= json_encode($blocked) ?>;
+window.UDM_BIG_OK = <?= json_encode($bigOk) ?>;
+</script>
 <script src="assets/js/core.js"></script>
 <script src="assets/js/level.js"></script>
 <script src="assets/js/player.js"></script>
@@ -430,6 +450,133 @@ foreach (Levels::all() as $level) {
     check('Pfeile bleiben an einer Wand hängen', p.alive, 'alive=' + p.alive);
   }());
 
+  /* ------------------------------------------- Grosse Bauteile & Assists */
+
+  (function testMultiTileFootprint() {
+    var level = makeLevel(FLAT, [block('beam', 10, 15)]);
+    var covered = level.cell(10, 15) && level.cell(11, 15) && level.cell(12, 15);
+    var beyond = level.cell(13, 15);
+    var oneEntry = level.blocks.length === 1;
+    check('Balken belegt drei Kacheln als ein Bauteil',
+      !!covered && !beyond && oneEntry,
+      'belegt=' + !!covered + ', daneben frei=' + !beyond + ', Bauteile=' + level.blocks.length);
+  }());
+
+  (function testMultiTileBlocksPlacement() {
+    var level = makeLevel(FLAT, [block('wall', 10, 12)]);
+    check('Mauer sperrt ihre ganze Grundfläche fürs Bauen',
+      !level.canPlaceAt(10, 12, 'stone') &&
+      !level.canPlaceAt(10, 13, 'stone') &&
+      !level.canPlaceAt(10, 14, 'stone') &&
+      level.canPlaceAt(11, 13, 'stone'),
+      'Kachel 10/13 belegt=' + !level.canPlaceAt(10, 13, 'stone'));
+  }());
+
+  (function testMultiTileNeedsRoom() {
+    var level = makeLevel(FLAT, [block('stone', 12, 15)]);
+    check('Großes Bauteil passt nicht in eine zu kleine Lücke',
+      !level.canPlaceAt(10, 15, 'beam') && level.canPlaceAt(13, 15, 'beam'),
+      'in Lücke=' + level.canPlaceAt(10, 15, 'beam') + ', daneben=' + level.canPlaceAt(13, 15, 'beam'));
+  }());
+
+  (function testMultiTileRemoval() {
+    var level = makeLevel(FLAT, [block('slab', 10, 14)]);
+    level.removeBlockAt(11, 15);
+    check('Großes Bauteil verschwindet komplett beim Entfernen',
+      !level.cell(10, 14) && !level.cell(11, 14) && !level.cell(10, 15) && !level.cell(11, 15) &&
+      level.blocks.length === 0,
+      'Restkacheln=' + [level.cell(10,14), level.cell(11,14), level.cell(10,15), level.cell(11,15)].filter(Boolean).length);
+  }());
+
+  (function testMultiTileIsSolid() {
+    var level = makeLevel(FLAT, [block('beam', 9, 16)]);
+    var p = makePlayer(11, 13);
+    simulate(p, level, 2, NONE, { keepGoing: true });
+    check('Man landet auf jeder Kachel eines Balkens',
+      Math.abs(p.y - (16 * TILE - UDM.PHYS.playerH)) < 2 && p.onGround,
+      'y=' + p.y.toFixed(1) + ' erwartet ' + (16 * TILE - UDM.PHYS.playerH));
+  }());
+
+  (function testOilAssistCountsAsKill() {
+    // Oel schiebt ueber die Kante: ohne fremde Falle zaehlt der Sturz dem
+    // Besitzer der Pfuetze.
+    var def = {
+      id: 'test-ledge', name: 'Kante', theme: 'day',
+      spawn: { x: 2, y: 17 }, goal: { x: 35, y: 17 },
+      rects: [{ x: 0, y: 18, w: 12, h: 5, t: 'ground' }]
+    };
+    var blocks = [];
+    for (var x = 8; x < 12; x++) { blocks.push(block('oil', x, 17, 0, 2)); }
+    var level = makeLevel(def, blocks);
+    var p = makePlayer(8, 17);
+    p.vx = 240;
+    simulate(p, level, 4, keys({ right: true }));
+    check('Ölpfütze zählt als Kill, wenn man darüber abstürzt',
+      !p.alive && p.cause === 'sturz' && p.killerSlot === 2,
+      'cause=' + p.cause + ', killerSlot=' + p.killerSlot);
+  }());
+
+  (function testOilIntoForeignTrap() {
+    // Oel von Spieler 2, Stacheln von Spieler 1 -> beide bekommen etwas.
+    var level = makeLevel(FLAT, [
+      block('oil', 10, 17, 0, 2), block('oil', 11, 17, 0, 2), block('oil', 12, 17, 0, 2),
+      block('spike', 14, 17, 0, 1)
+    ]);
+    var p = makePlayer(10, 17);
+    simulate(p, level, 4, keys({ right: true }));
+    check('Durch Öl in eine fremde Falle: Falle tötet, Öl half nach',
+      !p.alive && p.cause === 'stachel' && p.killerSlot === 1 && p.assistSlot === 2,
+      'cause=' + p.cause + ', killer=' + p.killerSlot + ', assist=' + p.assistSlot);
+  }());
+
+  (function testFanAssist() {
+    var def = {
+      id: 'test-fan', name: 'Fan', theme: 'day',
+      spawn: { x: 2, y: 17 }, goal: { x: 35, y: 17 },
+      rects: [{ x: 0, y: 18, w: 40, h: 5, t: 'ground' }]
+    };
+    var level = makeLevel(def, [block('fan', 12, 17, 1, 2), block('spike', 16, 17, 0, 0)]);
+    var p = makePlayer(13, 17);
+    simulate(p, level, 4, NONE);
+    check('Ventilator pustet in eine fremde Falle und hilft mit',
+      !p.alive && p.killerSlot === 0 && p.assistSlot === 2,
+      'cause=' + p.cause + ', killer=' + p.killerSlot + ', assist=' + p.assistSlot);
+  }());
+
+  (function testOwnOilOwnTrap() {
+    // Eigenes Oel, eigene Stacheln: nur ein Eigengoal, kein doppelter Eintrag.
+    var level = makeLevel(FLAT, [
+      block('oil', 10, 17, 0, 1), block('oil', 11, 17, 0, 1),
+      block('spike', 13, 17, 0, 1)
+    ]);
+    var p = makePlayer(10, 17);
+    simulate(p, level, 4, keys({ right: true }));
+    check('Eigenes Öl plus eigene Falle zählt nur einmal',
+      !p.alive && p.killerSlot === 1 && p.assistSlot === null,
+      'killer=' + p.killerSlot + ', assist=' + p.assistSlot);
+  }());
+
+  (function testKillBlockIsReported() {
+    var level = makeLevel(FLAT, [block('spike', 10, 17, 0, 2)]);
+    var id = level.blocks[0].id;
+    var p = makePlayer(10, 17);
+    simulate(p, level, 1, NONE);
+    var removed = level.removeBlocksById([p.killerBlock]);
+    check('Tödliches Bauteil meldet seine Kennung und lässt sich räumen',
+      p.killerBlock === id && removed === 1 && level.blocks.length === 0,
+      'gemeldet=' + p.killerBlock + ', erwartet=' + id + ', entfernt=' + removed);
+  }());
+
+  (function testGiveUp() {
+    var level = makeLevel(FLAT);
+    var p = makePlayer(10, 17);
+    simulate(p, level, 0.3, NONE, { keepGoing: true });
+    p.kill('aufgabe', null, level);
+    check('Aufgeben beendet die eigene Runde ohne Schuldigen',
+      !p.alive && p.cause === 'aufgabe' && p.killerSlot === null && p.isDone(),
+      'cause=' + p.cause + ', killer=' + p.killerSlot);
+  }());
+
   /* --------------------------------------------------- Spielfeldgrenzen */
 
   (function testLeftBoundary() {
@@ -681,6 +828,33 @@ foreach (Levels::all() as $level) {
     check('Bauregeln von Client und Server sind identisch',
       mismatches.length === 0,
       mismatches.length ? mismatches.slice(0, 6).join(' | ') : 'alle 4 Level, 920 Kacheln geprüft');
+  }());
+
+  (function testBigBlockRulesMatch() {
+    var levels = <?= json_encode(Levels::all()) ?>;
+    var expected = window.UDM_BIG_OK;
+    var mismatches = [];
+    var checked = 0;
+
+    levels.forEach(function (def) {
+      var level = new UDM.Level(def);
+      Object.keys(expected[def.id]).forEach(function (type) {
+        var serverSet = {};
+        expected[def.id][type].forEach(function (key) { serverSet[key] = true; });
+        for (var x = 0; x < UDM.COLS; x++) {
+          for (var y = 0; y < UDM.ROWS; y++) {
+            checked++;
+            if (level.canPlaceAt(x, y, type) !== !!serverSet[x + ',' + y]) {
+              mismatches.push(def.id + '/' + type + ' ' + x + ',' + y);
+            }
+          }
+        }
+      });
+    });
+
+    check('Auch für große Bauteile sind Client und Server einig',
+      mismatches.length === 0,
+      mismatches.length ? mismatches.slice(0, 5).join(' | ') : checked + ' Kacheln geprüft');
   }());
 
   (function testCardCatalogMatches() {

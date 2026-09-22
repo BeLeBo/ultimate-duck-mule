@@ -15,12 +15,16 @@ also nur, um den anderen den Weg zu verderben.
 
 Jede Runde besteht aus zwei Phasen:
 
-1. **Bauphase** – Der Reihe nach setzt jeder Spieler *zwei* Bauteile aus seiner Hand
+1. **Bauphase** – Der Reihe nach setzt jeder Spieler *ein* Bauteil aus seiner Hand
    und darf dabei *ein bereits liegendes entfernen* (Taste `X` oder Rechtsklick) –
-   egal von wem es stammt. Alles Gesetzte bleibt das ganze Match liegen, das Level
-   wird also Runde für Runde gemeiner.
+   egal von wem es stammt. Die Vorschau am Mauszeiger zeigt vorher, was das Bauteil
+   anrichtet.
 2. **Partyphase** – Alle starten gleichzeitig und versuchen, die Fahne zu erreichen.
-   Wer stirbt, schaut den Rest der Runde zu.
+   Wer stirbt, schaut den Rest der Runde zu; wer feststeckt, kann aufgeben.
+
+**Bauteile verbrauchen sich:** Jedes Bauteil, das in einer Runde jemanden erwischt
+hat, verschwindet danach wieder. Wer eine gute Falle stellt, bekommt die Punkte –
+behält die Falle aber nicht.
 
 Kommt drei Runden hintereinander niemand an, gilt das Level als zugebaut und
 wird komplett geräumt – so kann sich ein Match nicht festfahren.
@@ -33,9 +37,15 @@ wird komplett geräumt – so kann sich ein Match nicht festfahren.
 | Erster im Ziel | **+1** zusätzlich |
 | Einziger im Ziel | **+2** zusätzlich |
 | Ein Gegner stirbt an einem deiner Bauteile | **+1** pro Opfer |
+| Du hast ihn mit Öl oder Ventilator hineingeschoben | **+1** pro Opfer |
 | Du stirbst an deinem eigenen Bauteil | **−1** |
 
-Unter 0 Punkte geht es nicht. Wer nach einer Runde die Zielpunktzahl (Standard: 10)
+**Erreicht niemand das Ziel, gibt es für die ganze Runde gar nichts** – auch keine
+Fallenpunkte. Unter 0 Punkte geht es nicht.
+
+Öl und Ventilator töten nicht selbst, zählen aber: Wer damit jemanden über die
+Kante schiebt, bekommt den Kill. Rutscht das Opfer in die Falle eines Dritten,
+bekommen **beide** einen Punkt – der Fallensteller und der Nachhelfer. Wer nach einer Runde die Zielpunktzahl (Standard: 10)
 erreicht hat **und allein vorne liegt**, gewinnt das Match – bei Gleichstand geht es
 weiter.
 
@@ -111,7 +121,7 @@ Erweiterung aus.
 | 2 | `←` / `→` | `↑` | `↓` |
 | 3 | `J` / `L` | `I` | `K` |
 
-In der Bauphase platziert der Spieler, der am Zug ist, seine Bauteile mit der
+In der Bauphase platziert der Spieler, der am Zug ist, sein Bauteil mit der
 **Maus**: `1`–`4` wählt das Bauteil, `R` dreht es, `X` oder Rechtsklick entfernt
 ein liegendes. Die Vorschau am Mauszeiger zeigt vorher, was das Bauteil anrichtet –
 Reichweite des Luftstroms, Schussbahn, Pendelweg, Sägenschiene. Wer keine Maus
@@ -143,6 +153,9 @@ Alles hier ist ein Hindernis. Nichts davon bringt jemanden irgendwo hinauf.
 | Bauteil | Wirkung |
 | --- | --- |
 | Steinblock | Versperrt den Weg |
+| Balken | Drei Kacheln breite Plattform, riegelt ganze Wege ab |
+| Mauer | Drei Kacheln hoch – da kommt niemand drüber |
+| Betonklotz | Zwei mal zwei Kacheln massiv im Weg |
 | Eisblock | Versperrt den Weg, und wer oben landet, rutscht weiter |
 | Bruchblock | Bricht 0,45 s nach der Berührung weg |
 | Klebeblock | Bremst auf einen Kriechgang herunter |
@@ -169,7 +182,7 @@ herauslaufen geht nicht, nur nach unten fällt man.
 
 ## Selbsttest
 
-`tests.php` im Browser öffnen. Die Seite fährt 33 Tests gegen die echte
+`tests.php` im Browser öffnen. Die Seite fährt 49 Tests gegen die echte
 Spiel-Engine: Sprunghöhen, jedes Bauteil, jede Todesursache – und sie vergleicht
 die Bauregeln und den Bauteil-Katalog von JavaScript **mit denen von PHP**, damit
 Server und Client nicht auseinanderlaufen.

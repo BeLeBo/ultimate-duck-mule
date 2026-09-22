@@ -255,6 +255,9 @@ try {
                     'finished' => (bool) ($data['finished'] ?? false),
                     'time' => $data['time'] ?? 0,
                     'killerSlot' => $data['killerSlot'] ?? null,
+                    'assistSlot' => $data['assistSlot'] ?? null,
+                    'killerBlock' => $data['killerBlock'] ?? null,
+                    'assistBlock' => $data['assistBlock'] ?? null,
                     'cause' => str_field($data, 'cause'),
                 ]);
 

@@ -37,6 +37,11 @@
     this.time = 0;
     this.cause = '';
     this.killerSlot = null;
+    this.killerBlock = null;
+    // Wer zuletzt mit Oel oder Ventilator nachgeholfen hat.
+    this.assistSlot = null;
+    this.assistBlock = null;
+    this.assistTimer = 0;
     this.anim = 'idle';
     this.animTime = 0;
     this.squash = 1;
@@ -77,7 +82,10 @@
         if (!cell || cell.broken) { continue; }
         if (cell.spec.sticky) { env.sticky = true; }
         // Oelpfuetzen sind nicht solide, wirken aber auf alles, was sie beruehrt.
-        if (cell.spec.slick) { env.slick = true; }
+        if (cell.spec.slick) {
+          env.slick = true;
+          this.noteAssist(cell.ownerSlot, cell.id);
+        }
       }
     }
 
@@ -138,6 +146,12 @@
     this.coyote = this.onGround ? P.coyote : this.coyote - dt;
     this.wallLock -= dt;
     this.dropThrough -= dt;
+
+    this.assistTimer -= dt;
+    if (this.assistTimer <= 0) {
+      this.assistSlot = null;
+      this.assistBlock = null;
+    }
 
     // Waagerechte Steuerung (nach einem Wandsprung kurz gesperrt).
     var maxSpeed = P.moveSpeed * (env.sticky ? P.stickyFactor : 1);
@@ -222,6 +236,7 @@
     for (var i = 0; i < level.streams.length; i++) {
       var s = level.streams[i];
       if (!UDM.overlaps(box, s)) { continue; }
+      this.noteAssist(s.ownerSlot, s.blockId);
       if (s.dy < 0) {
         this.vy -= 3400 * s.power * dt;
         this.vy = Math.max(this.vy, -460 * s.power - 80);
@@ -232,6 +247,17 @@
         this.vx = UDM.clamp(this.vx, -520, 520);
       }
     }
+  };
+
+  /**
+   * Oel und Ventilator toeten nicht selbst, schubsen aber. Wer kurz darauf
+   * stirbt, rechnet den Schubs demjenigen an, dem das Bauteil gehoert.
+   */
+  Player.prototype.noteAssist = function (ownerSlot, blockId) {
+    if (typeof ownerSlot !== 'number' || ownerSlot < 0) { return; }
+    this.assistSlot = ownerSlot;
+    this.assistBlock = blockId || null;
+    this.assistTimer = 2.2;
   };
 
   Player.prototype.isOnOneWay = function (level) {
@@ -373,21 +399,21 @@
       var hazard = level.hazards[i];
       if (hazard.cell && hazard.cell.broken) { continue; }
       if (UDM.overlaps(box, hazard.rect)) {
-        return this.kill(hazard.cause, hazard.ownerSlot, level);
+        return this.kill(hazard.cause, hazard.ownerSlot, level, hazard.blockId);
       }
     }
 
     for (i = 0; i < level.saws.length; i++) {
       var saw = level.saws[i];
       if (this.circleHit(saw.x, saw.y, saw.radius)) {
-        return this.kill('saege', saw.ownerSlot, level);
+        return this.kill('saege', saw.ownerSlot, level, saw.blockId);
       }
     }
 
     for (i = 0; i < level.wreckers.length; i++) {
       var wrecker = level.wreckers[i];
       if (this.circleHit(wrecker.x, wrecker.y, wrecker.radius)) {
-        return this.kill('pendel', wrecker.ownerSlot, level);
+        return this.kill('pendel', wrecker.ownerSlot, level, wrecker.blockId);
       }
     }
 
@@ -395,7 +421,7 @@
       var p = level.projectiles[i];
       if (UDM.overlaps(box, p)) {
         level.projectiles.splice(i, 1);
-        return this.kill('pfeil', p.ownerSlot, level);
+        return this.kill('pfeil', p.ownerSlot, level, p.blockId);
       }
     }
 
@@ -410,12 +436,31 @@
     return dx * dx + dy * dy < r * r;
   };
 
-  Player.prototype.kill = function (cause, ownerSlot, level) {
+  Player.prototype.kill = function (cause, ownerSlot, level, blockId) {
     if (!this.alive || this.finished) { return null; }
     this.alive = false;
     this.anim = 'dead';
     this.cause = cause;
     this.killerSlot = (typeof ownerSlot === 'number' && ownerSlot >= 0) ? ownerSlot : null;
+    this.killerBlock = this.killerSlot !== null ? (blockId || null) : null;
+
+    var helper = this.assistTimer > 0 ? this.assistSlot : null;
+    var helperBlock = this.assistTimer > 0 ? this.assistBlock : null;
+    if (this.killerSlot === null && helper !== null) {
+      // Ohne Falle, aber mit Schubs: der Schubs war die Todesursache.
+      this.killerSlot = helper;
+      this.killerBlock = helperBlock;
+      this.assistSlot = null;
+      this.assistBlock = null;
+    } else if (helper !== null && helper === this.killerSlot) {
+      // Eigene Falle plus eigener Schubs - nur einmal zaehlen.
+      this.assistSlot = null;
+      this.assistBlock = null;
+    } else {
+      this.assistSlot = helper;
+      this.assistBlock = helperBlock;
+    }
+
     this.deathTimer = 0;
     this.vx = 0;
     this.vy = 0;
@@ -424,7 +469,7 @@
       level.burst(this.centerX(), this.centerY(), '#ff5566', 10);
     }
     UDM.Audio.die();
-    return { type: 'death', cause: cause, killerSlot: this.killerSlot };
+    return { type: 'death', cause: cause, killerSlot: this.killerSlot, assistSlot: this.assistSlot };
   };
 
   Player.prototype.finish = function (level) {

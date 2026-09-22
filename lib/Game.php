@@ -19,7 +19,7 @@ final class Game
     public const HAND_SIZE = 4;
 
     /** Bauteile, die ein Spieler pro Runde setzen darf. */
-    public const PLACES_PER_TURN = 2;
+    public const PLACES_PER_TURN = 1;
 
     /** Bereits liegende Bauteile, die er dabei entfernen darf. */
     public const REMOVES_PER_TURN = 1;
@@ -218,7 +218,7 @@ final class Game
         if (count($room['blocks']) >= self::MAX_BLOCKS) {
             throw new RuntimeException('Das Level ist voll.');
         }
-        if (!self::canPlaceAt($room, $x, $y)) {
+        if (!self::canPlaceAt($room, $x, $y, $type)) {
             throw new RuntimeException('Hier ist kein Platz.');
         }
 
@@ -267,11 +267,15 @@ final class Game
             throw new RuntimeException('Du hast deine Löschung schon verbraucht.');
         }
 
+        $taken = self::occupiedTiles($room);
+        $id = $taken[$x . ',' . $y] ?? null;
         $index = null;
-        foreach ($room['blocks'] as $i => $block) {
-            if ((int) $block['x'] === $x && (int) $block['y'] === $y) {
-                $index = $i;
-                break;
+        if ($id !== null) {
+            foreach ($room['blocks'] as $i => $block) {
+                if ((int) $block['id'] === $id) {
+                    $index = $i;
+                    break;
+                }
             }
         }
         if ($index === null) {
@@ -371,16 +375,26 @@ final class Game
             return;
         }
 
-        $killer = $result['killerSlot'] ?? null;
-        $killerSlot = is_numeric($killer) ? (int) $killer : null;
-        if ($killerSlot !== null && ($killerSlot < 0 || $killerSlot >= self::MAX_PLAYERS)) {
-            $killerSlot = null;
-        }
+        $slot = static function ($value): ?int {
+            if (!is_numeric($value)) {
+                return null;
+            }
+            $number = (int) $value;
+
+            return ($number >= 0 && $number < self::MAX_PLAYERS) ? $number : null;
+        };
+        $blockId = static function ($value): ?int {
+            return is_numeric($value) && (int) $value > 0 ? (int) $value : null;
+        };
 
         $room['players'][$token]['result'] = [
             'finished' => (bool) ($result['finished'] ?? false),
             'time' => round(max(0.0, min(999.0, (float) ($result['time'] ?? 0))), 2),
-            'killerSlot' => $killerSlot,
+            'killerSlot' => $slot($result['killerSlot'] ?? null),
+            // Wer mit Öl oder Ventilator nachgeholfen hat.
+            'assistSlot' => $slot($result['assistSlot'] ?? null),
+            'killerBlock' => $blockId($result['killerBlock'] ?? null),
+            'assistBlock' => $blockId($result['assistBlock'] ?? null),
             'cause' => self::cleanCause((string) ($result['cause'] ?? '')),
         ];
 
@@ -415,8 +429,11 @@ final class Game
      *   +1  Bonus fuer die schnellste Zeit unter den Angekommenen
      *   +2  Bonus, wenn nur eine Figur das Ziel erreicht hat
      *   +1  je Gegner, der an einem eigenen Bauteil gestorben ist
+     *   +1  je Gegner, den man mit Oel oder Ventilator hineingeschoben hat
      *   -1  am eigenen Bauteil gestorben
-     * Punkte werden nie unter 0 gedrueckt.
+     *
+     * Erreicht niemand das Ziel, gibt es fuer die ganze Runde nichts - auch
+     * keine Fallenpunkte. Punkte werden nie unter 0 gedrueckt.
      *
      * @param array<string, mixed> $room
      */
@@ -462,24 +479,44 @@ final class Game
                 }
             }
 
-            $victims = 0;
-            foreach ($participants as $other) {
-                if ($other === $token) {
-                    continue;
+            // Fallen- und Helferpunkte gibt es nur, wenn ueberhaupt jemand
+            // ins Ziel gekommen ist.
+            if (count($finishers) > 0) {
+                $victims = 0;
+                $assists = 0;
+                foreach ($participants as $other) {
+                    if ($other === $token) {
+                        continue;
+                    }
+                    $otherResult = $room['players'][$other]['result'] ?? null;
+                    if ($otherResult === null) {
+                        continue;
+                    }
+                    if ($otherResult['killerSlot'] === $player['slot']) {
+                        $victims++;
+                    } elseif (($otherResult['assistSlot'] ?? null) === $player['slot']) {
+                        $assists++;
+                    }
                 }
-                $otherResult = $room['players'][$other]['result'] ?? null;
-                if ($otherResult !== null && $otherResult['killerSlot'] === $player['slot']) {
-                    $victims++;
+                if ($victims > 0) {
+                    $delta += $victims;
+                    $reasons[] = [
+                        'text' => $victims > 1 ? "Fallensteller (x$victims)" : 'Fallensteller',
+                        'points' => $victims,
+                    ];
                 }
-            }
-            if ($victims > 0) {
-                $delta += $victims;
-                $reasons[] = ['text' => $victims > 1 ? "Fallensteller (x$victims)" : 'Fallensteller', 'points' => $victims];
-            }
+                if ($assists > 0) {
+                    $delta += $assists;
+                    $reasons[] = [
+                        'text' => $assists > 1 ? "Nachgeholfen (x$assists)" : 'Nachgeholfen',
+                        'points' => $assists,
+                    ];
+                }
 
-            if ($result !== null && $result['killerSlot'] === $player['slot']) {
-                $delta -= 1;
-                $reasons[] = ['text' => 'Eigengoal', 'points' => -1];
+                if ($result !== null && $result['killerSlot'] === $player['slot']) {
+                    $delta -= 1;
+                    $reasons[] = ['text' => 'Eigengoal', 'points' => -1];
+                }
             }
 
             $before = (int) $player['score'];
@@ -498,6 +535,35 @@ final class Game
                 'reasons' => $reasons,
             ];
             unset($player);
+        }
+
+        // Jedes Bauteil, das getoetet hat, ist damit verbraucht.
+        $spent = [];
+        foreach ($participants as $token) {
+            $result = $room['players'][$token]['result'] ?? null;
+            if ($result === null) {
+                continue;
+            }
+            foreach (['killerBlock', 'assistBlock'] as $key) {
+                if (!empty($result[$key])) {
+                    $spent[(int) $result[$key]] = true;
+                }
+            }
+        }
+        $spentCount = 0;
+        if ($spent !== []) {
+            $kept = [];
+            foreach ($room['blocks'] as $block) {
+                if (isset($spent[(int) $block['id']])) {
+                    $spentCount++;
+                } else {
+                    $kept[] = $block;
+                }
+            }
+            $room['blocks'] = $kept;
+            if ($spentCount > 0) {
+                self::log($room, $spentCount . ' Bauteil(e) haben zugeschlagen und verschwinden.');
+            }
         }
 
         // Kommt drei Runden lang niemand an, ist das Level zugebaut.
@@ -519,6 +585,7 @@ final class Game
             'entries' => $entries,
             'anyFinisher' => count($finishers) > 0,
             'cleared' => $cleared,
+            'spent' => $spentCount,
             'firstSlot' => $firstToken !== null ? (int) $room['players'][$firstToken]['slot'] : null,
         ];
 
@@ -668,23 +735,53 @@ final class Game
         return $room['version'] !== $before;
     }
 
-    /** @param array<string, mixed> $room */
-    public static function canPlaceAt(array $room, int $x, int $y): bool
+    /**
+     * Passt ein Bauteil hierhin? Prueft die komplette Grundflaeche, denn
+     * Balken, Mauer und Betonklotz belegen mehrere Kacheln.
+     *
+     * @param array<string, mixed> $room
+     */
+    public static function canPlaceAt(array $room, int $x, int $y, string $type = 'stone'): bool
     {
-        if (!Levels::inBounds($x, $y)) {
-            return false;
-        }
+        $size = Cards::size($type);
         $blocked = Levels::blockedTiles((string) $room['levelId']);
-        if (isset($blocked[$x . ',' . $y])) {
-            return false;
-        }
-        foreach ($room['blocks'] as $block) {
-            if ((int) $block['x'] === $x && (int) $block['y'] === $y) {
-                return false;
+        $taken = self::occupiedTiles($room);
+
+        for ($dx = 0; $dx < $size['w']; $dx++) {
+            for ($dy = 0; $dy < $size['h']; $dy++) {
+                $tx = $x + $dx;
+                $ty = $y + $dy;
+                if (!Levels::inBounds($tx, $ty)) {
+                    return false;
+                }
+                if (isset($blocked[$tx . ',' . $ty]) || isset($taken[$tx . ',' . $ty])) {
+                    return false;
+                }
             }
         }
 
         return true;
+    }
+
+    /**
+     * Alle von Bauteilen belegten Kacheln.
+     *
+     * @param array<string, mixed> $room
+     * @return array<string, int> Kachel => Bauteil-Kennung
+     */
+    public static function occupiedTiles(array $room): array
+    {
+        $taken = [];
+        foreach ($room['blocks'] as $block) {
+            $size = Cards::size((string) $block['type']);
+            for ($dx = 0; $dx < $size['w']; $dx++) {
+                for ($dy = 0; $dy < $size['h']; $dy++) {
+                    $taken[((int) $block['x'] + $dx) . ',' . ((int) $block['y'] + $dy)] = (int) $block['id'];
+                }
+            }
+        }
+
+        return $taken;
     }
 
     /** @param array<string, mixed> $room */
@@ -849,7 +946,10 @@ final class Game
 
     private static function cleanCause(string $cause): string
     {
-        $allowed = ['ziel', 'sturz', 'stachel', 'saege', 'pendel', 'pfeil', 'zeit', 'verbindung', ''];
+        $allowed = [
+            'ziel', 'sturz', 'stachel', 'saege', 'pendel', 'pfeil',
+            'zeit', 'verbindung', 'aufgabe', '',
+        ];
 
         return in_array($cause, $allowed, true) ? $cause : '';
     }

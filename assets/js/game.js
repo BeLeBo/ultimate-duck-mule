@@ -9,7 +9,7 @@
   var PARTY_AFTER_FIRST = 10; // Restzeit, sobald jemand im Ziel ist
   var COUNTDOWN = 2.2;
   var HAND_SIZE = 4;
-  var PLACES_PER_TURN = 2;   // Bauteile pro Zug
+  var PLACES_PER_TURN = 1;   // Bauteile pro Zug
   var REMOVES_PER_TURN = 1;  // Loeschungen pro Zug
 
   var Game = {
@@ -68,7 +68,7 @@
     cacheDom: function () {
       var ids = ['round-label', 'target-label', 'players', 'banner', 'countdown', 'timer',
         'timer-fill', 'overlay', 'turn-info', 'hand', 'hints', 'btn-sound', 'btn-rules',
-        'level-label', 'log'];
+        'btn-giveup', 'level-label', 'log'];
       var self = this;
       ids.forEach(function (id) { self.dom[id] = document.getElementById(id); });
     },
@@ -85,6 +85,7 @@
       });
 
       this.dom['btn-rules'].addEventListener('click', function () { self.showRules(); });
+      this.dom['btn-giveup'].addEventListener('click', function () { self.giveUp(); });
 
       this.dom.overlay.addEventListener('click', function (e) {
         var action = e.target.getAttribute && e.target.getAttribute('data-action');
@@ -174,6 +175,8 @@
         this.players[p].removesLeft = REMOVES_PER_TURN;
       }
       this.build.deleting = false;
+      // Bruchbloecke heilen, Geschosse und Partikel der Vorrunde raus.
+      this.level.resetRound();
       this.parkPlayers();
 
       this.setBanner('Runde ' + this.round + ' – Bauphase');
@@ -239,7 +242,7 @@
         onBlock = !!(onBlock && onBlock.kind === 'block');
         this.build.valid = this.build.deleting
           ? onBlock
-          : this.level.canPlaceAt(this.build.tx, this.build.ty);
+          : this.level.canPlaceAt(this.build.tx, this.build.ty, this.selectedType());
 
         var confirm = mouse.clicked || UDM.Input.wasPressed('Enter') || UDM.Input.wasPressed('Space');
         // Rechtsklick loescht direkt, ohne den Modus umzuschalten.
@@ -325,7 +328,7 @@
       if (this.build.busy) { return; }
       var type = this.selectedType();
       if (!type) { return; }
-      if (!this.level.canPlaceAt(this.build.tx, this.build.ty)) {
+      if (!this.level.canPlaceAt(this.build.tx, this.build.ty, type)) {
         UDM.Audio.deny();
         this.setBanner('Da passt nichts hin!', 1.2);
         return;
@@ -436,6 +439,7 @@
           this.party.started = true;
           UDM.Audio.start();
           this.updateHud();
+          this.refreshGiveUp();
         }
         this.level.update(dt, 0);
         return;
@@ -522,17 +526,28 @@
           }
         }
 
-        var victims = players.filter(function (o) {
-          return o !== p && o.killerSlot === p.slot;
-        }).length;
-        if (victims > 0) {
-          delta += victims;
-          reasons.push({ text: victims > 1 ? 'Fallensteller (x' + victims + ')' : 'Fallensteller', points: victims });
-        }
+        // Fallen- und Helferpunkte nur, wenn überhaupt jemand ankam.
+        if (finishers.length > 0) {
+          var victims = players.filter(function (o) {
+            return o !== p && o.killerSlot === p.slot;
+          }).length;
+          if (victims > 0) {
+            delta += victims;
+            reasons.push({ text: victims > 1 ? 'Fallensteller (x' + victims + ')' : 'Fallensteller', points: victims });
+          }
 
-        if (p.killerSlot === p.slot) {
-          delta -= 1;
-          reasons.push({ text: 'Eigengoal', points: -1 });
+          var assists = players.filter(function (o) {
+            return o !== p && o.assistSlot === p.slot && o.killerSlot !== p.slot;
+          }).length;
+          if (assists > 0) {
+            delta += assists;
+            reasons.push({ text: assists > 1 ? 'Nachgeholfen (x' + assists + ')' : 'Nachgeholfen', points: assists });
+          }
+
+          if (p.killerSlot === p.slot) {
+            delta -= 1;
+            reasons.push({ text: 'Eigengoal', points: -1 });
+          }
         }
 
         var before = p.score;
@@ -560,6 +575,14 @@
 
     finishRoundLocal: function () {
       this.lastRound = this.scoreRound(this.players);
+
+      // Jedes Bauteil, das getötet hat, ist damit verbraucht.
+      var spent = [];
+      this.players.forEach(function (p) {
+        if (p.killerBlock) { spent.push(p.killerBlock); }
+        if (p.assistBlock) { spent.push(p.assistBlock); }
+      });
+      this.lastRound.spent = spent.length ? this.level.removeBlocksById(spent) : 0;
 
       // Drei Runden ohne Zieleinlauf: das Level ist zugebaut, alles raeumen.
       if (this.lastRound.anyFinisher) {
@@ -660,6 +683,7 @@
           this.phase = 'build';
           this.build.card = 0;
           this.build.rot = 0;
+          this.level.resetRound();
           this.parkPlayers();
           this.hideOverlay();
         }
@@ -783,12 +807,55 @@
         finished: me.finished,
         time: Math.round(me.time * 100) / 100,
         killerSlot: me.killerSlot,
+        assistSlot: me.assistSlot,
+        killerBlock: me.killerBlock,
+        assistBlock: me.assistBlock,
         cause: me.cause
       }).then(function (data) {
         self.applyServerState(data.state);
       }).catch(function () {
         self.party.reported = false;
       });
+    },
+
+    /**
+     * Aufgeben: online nur die eigene Figur, lokal alle noch lebenden -
+     * dann ist die Runde sofort vorbei.
+     */
+    giveUp: function () {
+      if (this.phase !== 'party') { return; }
+      var gaveUp = 0;
+
+      for (var i = 0; i < this.players.length; i++) {
+        var p = this.players[i];
+        if (p.remote || p.isDone()) { continue; }
+        if (this.cfg.mode === 'online' && p.slot !== this.mySlot) { continue; }
+        p.kill('aufgabe', null, this.level);
+        gaveUp++;
+      }
+
+      if (gaveUp > 0) {
+        UDM.Render.kick(4);
+        this.setBanner(gaveUp > 1 ? 'Runde abgebrochen' : 'Aufgegeben', 1.6);
+        this.updateHud();
+      }
+    },
+
+    /** Knopf nur zeigen, wenn es etwas aufzugeben gibt. */
+    refreshGiveUp: function () {
+      var show = false;
+      if (this.phase === 'party' && this.party.countdown <= 0) {
+        for (var i = 0; i < this.players.length; i++) {
+          var p = this.players[i];
+          if (p.remote || p.isDone()) { continue; }
+          if (this.cfg.mode === 'online' && p.slot !== this.mySlot) { continue; }
+          show = true;
+          break;
+        }
+      }
+      this.dom['btn-giveup'].classList.toggle('hidden', !show);
+      this.dom['btn-giveup'].textContent =
+        this.cfg.mode === 'online' ? 'Aufgeben' : 'Runde abbrechen';
     },
 
     /* ---------------------------------------------------------- Oberflaeche */
@@ -808,6 +875,7 @@
       this.renderPlayers();
       this.renderHand();
       this.renderHints();
+      this.refreshGiveUp();
     },
 
     renderPlayers: function () {
@@ -911,17 +979,24 @@
       for (var i = 0; i < icons.length; i++) {
         var canvas = icons[i];
         var type = canvas.getAttribute('data-type');
+        var spec = UDM.BLOCKS[type] || {};
+        var bw = spec.w || 1;
+        var bh = spec.h || 1;
+        // Grosse Bauteile so verkleinern, dass sie komplett ins Symbol passen.
+        var scale = Math.min(1, 1 / Math.max(bw, bh));
         var ictx = canvas.getContext('2d');
         ictx.clearRect(0, 0, 40, 40);
         ictx.save();
-        ictx.translate(4, 4);
-        ictx.scale(1, 1);
+        ictx.translate(20 - (bw * 32 * scale) / 2, 20 - (bh * 32 * scale) / 2);
+        ictx.scale(scale, scale);
         UDM.Render.drawBlock(ictx, {
           type: type,
           tx: 0,
           ty: 0,
-          rot: UDM.BLOCKS[type] && UDM.BLOCKS[type].rotatable ? this.build.rot : 0,
-          spec: UDM.BLOCKS[type],
+          w: bw,
+          h: bh,
+          rot: spec.rotatable ? this.build.rot : 0,
+          spec: spec,
           broken: false,
           touch: -1,
           shake: 0,
@@ -983,14 +1058,14 @@
       var canStart = state.isHost && state.players.length >= 2;
       this.showOverlay(
         '<h2>Raum ' + UDM.escapeHtml(state.code) + '</h2>' +
-        '<p class="muted">Code weitergeben – bis zu 3 Spieler.</p>' +
+        '<p class="muted">Code weitergeben – bis zu 3 Spieler.<br>' +
+        '<span class="small">Level: ' + UDM.escapeHtml(this.level.def.name) +
+        ' · Ziel: ' + state.targetScore + ' Punkte</span></p>' +
         '<ul class="lobby-list">' + rows + '</ul>' +
         (state.isHost
           ? '<button class="big" data-action="start"' + (canStart ? '' : ' disabled') + '>Spiel starten</button>' +
-            (canStart ? '' : '<p class="muted">Mindestens 2 Spieler nötig.</p>')
-          : '<p class="muted">Warten, bis der Gastgeber startet …</p>') +
-        '<p class="muted small">Level: ' + UDM.escapeHtml(this.level.def.name) +
-        ' · Ziel: ' + state.targetScore + ' Punkte</p>'
+            (canStart ? '' : '<p class="muted small">Mindestens 2 Spieler nötig.</p>')
+          : '<p class="muted">Warten, bis der Gastgeber startet …</p>')
       );
     },
 
@@ -1024,7 +1099,11 @@
 
       this.showOverlay(
         '<h2>Runde ' + data.round + '</h2>' +
-        (data.anyFinisher ? '' : '<p class="muted">Niemand hat das Ziel erreicht – keine Punkte.</p>') +
+        (data.anyFinisher ? ''
+          : '<p class="muted">Niemand hat das Ziel erreicht – diese Runde gibt es gar keine Punkte, auch keine für Fallen.</p>') +
+        (data.spent ? '<p class="cleared">' + data.spent +
+          (data.spent === 1 ? ' Bauteil hat' : ' Bauteile haben') +
+          ' zugeschlagen und verschwindet wieder.</p>' : '') +
         (data.cleared ? '<p class="cleared">Drei Runden ohne Zieleinlauf – das Level wird komplett geräumt.</p>' : '') +
         '<table class="scoretable"><tbody>' + rows + '</tbody></table>' +
         '<button class="big" data-action="next">Weiter</button>' + waiting,
@@ -1067,13 +1146,16 @@
         '<ol class="rules">' +
         '<li><b>Jedes Level ist ohne ein einziges Bauteil zu schaffen.</b> ' +
         'Alles, was gebaut wird, ist ein Hindernis \u2013 keine Hilfe.</li>' +
-        '<li><b>Bauphase:</b> Der Reihe nach setzt jeder <b>zwei Bauteile</b> ' +
-        'und darf dabei <b>ein liegendes entfernen</b> (Taste X oder Rechtsklick). ' +
-        'Alles Gesetzte bleibt das ganze Match liegen.</li>' +
+        '<li><b>Bauphase:</b> Der Reihe nach setzt jeder <b>ein Bauteil</b> ' +
+        'und darf dabei <b>ein liegendes entfernen</b> (Taste X oder Rechtsklick).</li>' +
         '<li><b>Partyphase:</b> Alle rennen gleichzeitig los und versuchen, die Fahne zu erreichen.</li>' +
         '<li><b>Punkte:</b> Ziel erreicht <b>+1</b>, erster im Ziel <b>+1</b> extra, ' +
         'einziger im Ziel <b>+2</b> extra, ein Gegner stirbt an deinem Bauteil <b>+1</b>, ' +
-        'du stirbst an deinem eigenen <b>-1</b>.</li>' +
+        'du hast ihn mit Öl oder Ventilator hineingeschoben <b>+1</b>, ' +
+        'du stirbst an deinem eigenen <b>-1</b>. ' +
+        '<b>Kommt niemand ins Ziel, gibt es gar nichts</b> – auch keine Fallenpunkte.</li>' +
+        '<li><b>Bauteile verbrauchen sich:</b> Was jemanden erwischt hat, ' +
+        'verschwindet nach der Runde wieder.</li>' +
         '<li>Wer zuerst <b>' + this.targetScore + ' Punkte</b> hat und allein vorn liegt, gewinnt.</li>' +
         '<li>Kommt <b>drei Runden lang niemand</b> ins Ziel, wird das Level komplett ger\u00e4umt.</li>' +
         '</ol>' +
@@ -1089,13 +1171,18 @@
       for (var i = 0; i < icons.length; i++) {
         var canvas = icons[i];
         var type = canvas.getAttribute('data-type');
+        var spec = UDM.BLOCKS[type] || {};
+        var bw = spec.w || 1;
+        var bh = spec.h || 1;
+        var scale = Math.min(1, 1 / Math.max(bw, bh));
         var ictx = canvas.getContext('2d');
         ictx.clearRect(0, 0, 40, 40);
         ictx.save();
-        ictx.translate(4, 4);
+        ictx.translate(20 - (bw * 32 * scale) / 2, 20 - (bh * 32 * scale) / 2);
+        ictx.scale(scale, scale);
         UDM.Render.drawBlock(ictx, {
-          type: type, tx: 0, ty: 0, rot: 1,
-          spec: UDM.BLOCKS[type], broken: false, touch: -1, shake: 0, id: 1
+          type: type, tx: 0, ty: 0, w: bw, h: bh, rot: 1,
+          spec: spec, broken: false, touch: -1, shake: 0, id: 1
         }, 0, 0, this.time);
         ictx.restore();
       }
@@ -1164,6 +1251,9 @@
       if (this.phase === 'build') {
         // Nur einmal pro Frame: Klicks und Tastendruecke sind Flanken.
         this.stepBuild(dt);
+        // Auch in der Bauphase laufen Saegen, Pendel und Pfeile weiter -
+        // sonst stehen Geschosse der Vorrunde eingefroren im Bild.
+        this.level.update(dt, this.time);
       } else if (this.phase === 'party') {
         // Physik in festen Schritten, damit sie stabil bleibt.
         var steps = Math.min(4, Math.ceil(dt / (1 / 120)));

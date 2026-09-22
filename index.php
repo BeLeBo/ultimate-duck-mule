@@ -115,7 +115,7 @@ $characters = Game::CHARACTERS;
     <div class="seat" style="margin-bottom:16px">
       <canvas class="seat-canvas" width="54" height="54" data-slot="0" id="online-avatar"></canvas>
       <div>
-        <label for="online-name">Dein Name &ndash; gilt f&uuml;r beides</label>
+        <label for="online-name">Dein Name</label>
         <input type="text" id="online-name" maxlength="14" value="Spieler" autocomplete="off">
         <div class="chars" data-charpick="online">
           <?php $ci = 0; foreach ($characters as $char): ?>
@@ -171,11 +171,14 @@ $characters = Game::CHARACTERS;
     <h2>Regeln</h2>
     <ol class="rules">
       <li><strong>Jedes Level ist ohne ein einziges Bauteil zu schaffen.</strong> Alles, was gebaut wird, ist ein Hindernis &ndash; es gibt keine Kletterhilfen.</li>
-      <li><strong>Bauphase:</strong> Der Reihe nach setzt jeder <strong>zwei Bauteile</strong> aus seiner Hand und darf dabei <strong>ein bereits liegendes entfernen</strong> (Taste X oder Rechtsklick). Alles Gesetzte bleibt das ganze Match liegen.</li>
+      <li><strong>Bauphase:</strong> Der Reihe nach setzt jeder <strong>ein Bauteil</strong> aus seiner Hand und darf dabei <strong>ein bereits liegendes entfernen</strong> (Taste X oder Rechtsklick).</li>
+      <li><strong>Bauteile verbrauchen sich:</strong> Jedes Bauteil, das jemanden erwischt hat, verschwindet nach der Runde wieder.</li>
       <li><strong>Partyphase:</strong> Alle starten gleichzeitig und versuchen, die Fahne zu erreichen. Wer stirbt, schaut den Rest der Runde zu.</li>
       <li><strong>Punkte:</strong> Ziel erreicht <b>+1</b> &middot; erster im Ziel <b>+1</b> extra &middot;
         einziger im Ziel <b>+2</b> extra &middot; ein Gegner stirbt an deinem Bauteil <b>+1</b> &middot;
-        du stirbst an deinem eigenen Bauteil <b>-1</b>. Unter 0 geht es nicht.</li>
+        du hast ihn mit &Ouml;l oder Ventilator hineingeschoben <b>+1</b> &middot;
+        du stirbst an deinem eigenen Bauteil <b>-1</b>. Unter 0 geht es nicht.
+        <strong>Kommt niemand ins Ziel, gibt es f&uuml;r die Runde gar keine Punkte</strong> &ndash; auch keine f&uuml;r Fallen.</li>
       <li><strong>Sieg:</strong> Wer nach einer Runde die Zielpunktzahl erreicht hat und allein vorne liegt, gewinnt.</li>
       <li><strong>Bewegung:</strong> Laufen, springen, an W&auml;nden abrutschen und abspringen (Wandsprung).</li>
       <li>Kommt <strong>drei Runden lang niemand</strong> ins Ziel, ist das Level zugebaut und wird ger&auml;umt.</li>

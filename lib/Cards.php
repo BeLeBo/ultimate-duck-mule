@@ -16,7 +16,9 @@ final class Cards
      * ausschliesslich, um den anderen den Weg zu verderben. Entsprechend
      * gibt es hier nichts, womit man irgendwo hinaufklettern koennte.
      *
-     * @var array<string, array{name:string, desc:string, weight:int, rotatable:bool}>
+     * Groessere Teile tragen w/h in Kacheln; ohne Angabe ist ein Bauteil 1x1.
+     *
+     * @var array<string, array{name:string, desc:string, weight:int, rotatable:bool, w?:int, h?:int}>
      */
     public const CATALOG = [
         'stone' => [
@@ -24,6 +26,30 @@ final class Cards
             'desc' => 'Versperrt den Weg. Schlicht und wirkungsvoll.',
             'weight' => 9,
             'rotatable' => false,
+        ],
+        'beam' => [
+            'name' => 'Balken',
+            'desc' => 'Drei Kacheln breite Plattform. Riegelt ganze Wege ab.',
+            'weight' => 6,
+            'rotatable' => false,
+            'w' => 3,
+            'h' => 1,
+        ],
+        'wall' => [
+            'name' => 'Mauer',
+            'desc' => 'Drei Kacheln hoch. Da kommt niemand drüber.',
+            'weight' => 6,
+            'rotatable' => false,
+            'w' => 1,
+            'h' => 3,
+        ],
+        'slab' => [
+            'name' => 'Betonklotz',
+            'desc' => 'Zwei mal zwei Kacheln massiv im Weg.',
+            'weight' => 5,
+            'rotatable' => false,
+            'w' => 2,
+            'h' => 2,
         ],
         'ice' => [
             'name' => 'Eisblock',
@@ -107,6 +133,19 @@ final class Cards
     public static function isRotatable(string $id): bool
     {
         return self::CATALOG[$id]['rotatable'] ?? false;
+    }
+
+    /**
+     * Groesse eines Bauteils in Kacheln.
+     *
+     * @return array{w:int, h:int}
+     */
+    public static function size(string $id): array
+    {
+        return [
+            'w' => max(1, (int) (self::CATALOG[$id]['w'] ?? 1)),
+            'h' => max(1, (int) (self::CATALOG[$id]['h'] ?? 1)),
+        ];
     }
 
     /**

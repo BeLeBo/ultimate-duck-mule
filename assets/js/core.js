@@ -59,6 +59,7 @@
     pfeil: 'durchbohrt',
     quetsch: 'zerquetscht',
     zeit: 'Zeit abgelaufen',
+    aufgabe: 'aufgegeben',
     verbindung: 'Verbindung weg',
     ziel: 'im Ziel'
   };
