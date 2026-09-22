@@ -45,6 +45,28 @@ reines Ausliefern der Dateien, für den Online-Modus wird PHP gebraucht.
 Damit der Online-Modus funktioniert, muss `data/rooms/` für den Webserver
 beschreibbar sein (dort liegt pro Raum eine JSON-Datei).
 
+### Wenn der Server `404 ... - No such file or directory` meldet
+
+Dann steht der Server im falschen Verzeichnis. `php -S` liefert nur Dateien
+aus dem Ordner aus, in dem er gestartet wurde – Rootrechte ändern daran
+nichts, `sudo` wird hier nicht gebraucht.
+
+```bash
+git clone https://github.com/BeLeBo/ultimate-duck-mule.git
+cd ultimate-duck-mule
+ls index.php          # muss "index.php" ausgeben, sonst stimmt der Ordner nicht
+php -S localhost:8000
+```
+
+Beim Start schreibt PHP die Zeile `Document root is ...` ins Terminal – dort
+muss genau der Ordner stehen, in dem `index.php` liegt. Stimmt er, gibt es
+beim Aufruf von `http://localhost:8000/` **keine** 404-Zeilen mehr.
+
+Unter Windows funktioniert derselbe Befehl in der Eingabeaufforderung. Wer
+dort kein PHP installiert hat, kann stattdessen XAMPP nehmen und den Ordner
+nach `C:\xampp\htdocs\` kopieren; das Spiel liegt dann unter
+`http://localhost/ultimate-duck-mule/`.
+
 ## Spielmodi
 
 ### Lokal an einer Tastatur
@@ -123,6 +145,7 @@ lib/Cards.php          Katalog der Bauteile (Namen, Gewichte, Drehbarkeit)
 lib/Levels.php         Level-Geometrie und Bauregeln – einzige Quelle für beide Seiten
 lib/Game.php           Spielregeln des Online-Modus: Phasen, Zugfolge, Punkte
 lib/Rooms.php          Raumdateien mit Dateisperre, Aufräumen alter Räume
+lib/View.php           Kleine HTML-Helfer (eingebettetes Tab-Symbol)
 assets/js/core.js      Konstanten, Mathe-Helfer, synthetischer Sound
 assets/js/level.js     Kachelgitter, Bauteil-Physik, bewegliche Gefahren
 assets/js/player.js    Steuerung und Plattformer-Physik der Figur

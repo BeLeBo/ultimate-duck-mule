@@ -4,6 +4,7 @@ declare(strict_types=1);
 require_once __DIR__ . '/lib/Cards.php';
 require_once __DIR__ . '/lib/Levels.php';
 require_once __DIR__ . '/lib/Game.php';
+require_once __DIR__ . '/lib/View.php';
 
 $notice = '';
 $noticeMap = [
@@ -25,6 +26,7 @@ $characters = Game::CHARACTERS;
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>Ultimate Duck Mule</title>
 <meta name="description" content="Ein Party-Plattformer zum Selberbauen fuer bis zu drei Spieler.">
+<?= View::favicon() ?>
 <link rel="stylesheet" href="assets/css/style.css">
 </head>
 <body>

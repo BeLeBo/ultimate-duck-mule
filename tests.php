@@ -10,6 +10,7 @@ declare(strict_types=1);
 
 require_once __DIR__ . '/lib/Levels.php';
 require_once __DIR__ . '/lib/Cards.php';
+require_once __DIR__ . '/lib/View.php';
 
 // Vom Server berechnete Sperrflaechen - der Client muss zum selben Ergebnis kommen.
 $blocked = [];
@@ -22,6 +23,7 @@ foreach (Levels::all() as $level) {
 <head>
 <meta charset="utf-8">
 <title>Selbsttest – Ultimate Duck Mule</title>
+<?= View::favicon() ?>
 <link rel="stylesheet" href="assets/css/style.css">
 <style>
   .menu-wrap { max-width: 900px; }

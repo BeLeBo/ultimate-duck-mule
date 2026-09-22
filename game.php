@@ -5,6 +5,7 @@ require_once __DIR__ . '/lib/Cards.php';
 require_once __DIR__ . '/lib/Levels.php';
 require_once __DIR__ . '/lib/Game.php';
 require_once __DIR__ . '/lib/Rooms.php';
+require_once __DIR__ . '/lib/View.php';
 
 $mode = ($_GET['mode'] ?? 'local') === 'online' ? 'online' : 'local';
 
@@ -65,6 +66,7 @@ $configJson = json_encode($config, JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASH
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title><?= htmlspecialchars($title, ENT_QUOTES) ?></title>
+<?= View::favicon() ?>
 <link rel="stylesheet" href="assets/css/style.css">
 </head>
 <body>
