@@ -9,6 +9,8 @@
   var PARTY_AFTER_FIRST = 10; // Restzeit, sobald jemand im Ziel ist
   var COUNTDOWN = 2.2;
   var HAND_SIZE = 4;
+  var PLACES_PER_TURN = 2;   // Bauteile pro Zug
+  var REMOVES_PER_TURN = 1;  // Loeschungen pro Zug
 
   var Game = {
     cfg: null,
@@ -26,7 +28,11 @@
     message: '',
     dom: {},
 
-    build: { order: [], idx: 0, card: 0, rot: 0, tx: -1, ty: -1, valid: false, busy: false },
+    build: {
+      order: [], idx: 0, card: 0, rot: 0,
+      tx: -1, ty: -1, valid: false, busy: false,
+      deleting: false, canDelete: false
+    },
     party: { countdown: 0, time: 0, remaining: PARTY_LIMIT, started: false, firstFinishAt: -1, reported: false },
 
     net: null,
@@ -93,6 +99,8 @@
         var index = parseInt(card.getAttribute('data-card'), 10);
         if (card.hasAttribute('data-rotate')) {
           self.rotateSelection();
+        } else if (card.hasAttribute('data-erase')) {
+          self.toggleDelete();
         } else {
           self.selectCard(index);
         }
@@ -162,7 +170,10 @@
 
       for (var p = 0; p < this.players.length; p++) {
         this.players[p].hand = this.dealHand();
+        this.players[p].placesLeft = PLACES_PER_TURN;
+        this.players[p].removesLeft = REMOVES_PER_TURN;
       }
+      this.build.deleting = false;
       this.parkPlayers();
 
       this.setBanner('Runde ' + this.round + ' – Bauphase');
@@ -207,6 +218,7 @@
           if (UDM.Input.wasPressed('Digit' + (k + 1))) { this.selectCard(k); }
         }
         if (UDM.Input.wasPressed('KeyR')) { this.rotateSelection(); }
+        if (UDM.Input.wasPressed('KeyX')) { this.toggleDelete(); }
 
         // Cursor per Maus oder per eigenen Tasten.
         if (mouse.inside) {
@@ -220,15 +232,65 @@
         if (this.build.tx < 0) { this.build.tx = Math.floor(this.level.cols / 2); }
         if (this.build.ty < 0) { this.build.ty = Math.floor(this.level.rows / 2); }
 
-        this.build.valid = this.level.canPlaceAt(this.build.tx, this.build.ty);
+        this.build.canDelete = this.removesLeft(builder) > 0;
+        if (this.build.deleting && !this.build.canDelete) { this.build.deleting = false; }
 
-        var wantsPlace = mouse.clicked || UDM.Input.wasPressed('Enter') || UDM.Input.wasPressed('Space');
-        if (wantsPlace) {
-          this.tryPlace(builder);
+        var onBlock = this.level.cell(this.build.tx, this.build.ty);
+        onBlock = !!(onBlock && onBlock.kind === 'block');
+        this.build.valid = this.build.deleting
+          ? onBlock
+          : this.level.canPlaceAt(this.build.tx, this.build.ty);
+
+        var confirm = mouse.clicked || UDM.Input.wasPressed('Enter') || UDM.Input.wasPressed('Space');
+        // Rechtsklick loescht direkt, ohne den Modus umzuschalten.
+        if (mouse.right && this.build.canDelete && onBlock) {
+          this.tryRemove(builder);
+        } else if (confirm) {
+          if (this.build.deleting) { this.tryRemove(builder); } else { this.tryPlace(builder); }
         }
       } else {
         this.build.valid = false;
+        this.build.canDelete = false;
       }
+    },
+
+    /** Wie viele Bauteile darf der Spieler noch setzen? */
+    placesLeft: function (player) {
+      if (!player) { return 0; }
+      if (this.cfg.mode === 'online') {
+        var info = this.serverPlayer(player.slot);
+        return info ? info.places : 0;
+      }
+      return player.placesLeft === undefined ? PLACES_PER_TURN : player.placesLeft;
+    },
+
+    /** Wie viele Loeschungen hat er noch? */
+    removesLeft: function (player) {
+      if (!player) { return 0; }
+      if (this.cfg.mode === 'online') {
+        var info = this.serverPlayer(player.slot);
+        return info ? info.removes : 0;
+      }
+      return player.removesLeft === undefined ? REMOVES_PER_TURN : player.removesLeft;
+    },
+
+    serverPlayer: function (slot) {
+      if (!this.server) { return null; }
+      for (var i = 0; i < this.server.players.length; i++) {
+        if (this.server.players[i].slot === slot) { return this.server.players[i]; }
+      }
+      return null;
+    },
+
+    toggleDelete: function () {
+      var builder = this.activeBuilder();
+      if (!builder || this.removesLeft(builder) <= 0) {
+        UDM.Audio.deny();
+        return;
+      }
+      this.build.deleting = !this.build.deleting;
+      UDM.Audio.select();
+      this.renderHand();
     },
 
     selectCard: function (index) {
@@ -237,6 +299,7 @@
       if (this.cfg.mode === 'online' && builder.slot !== this.mySlot) { return; }
       this.build.card = index;
       this.build.rot = 0;
+      this.build.deleting = false;
       UDM.Audio.select();
       this.renderHand();
     },
@@ -274,23 +337,62 @@
       }
 
       this.level.addBlock({
-        id: this.level.blocks.length + 1,
+        id: this.level.nextId(),
         type: type,
         x: this.build.tx,
         y: this.build.ty,
         rot: this.build.rot,
         ownerSlot: builder.slot
       });
-      builder.hand = [];
+      builder.hand.splice(this.build.card, 1);
+      builder.placesLeft = this.placesLeft(builder) - 1;
+      this.build.card = 0;
+      this.build.rot = 0;
       UDM.Audio.place();
       UDM.Render.kick(2);
-      this.advanceBuild();
+
+      if (builder.placesLeft <= 0 || !builder.hand.length) {
+        this.advanceBuild();
+      } else {
+        this.setBanner('Noch ein Bauteil', 1.1);
+        this.updateHud();
+      }
+    },
+
+    /** Entfernt ein liegendes Bauteil - kostet die Loeschung dieses Zugs. */
+    tryRemove: function (builder) {
+      if (this.build.busy) { return; }
+      if (this.removesLeft(builder) <= 0) {
+        UDM.Audio.deny();
+        this.setBanner('Keine Löschung mehr übrig', 1.4);
+        return;
+      }
+      var cell = this.level.cell(this.build.tx, this.build.ty);
+      if (!cell || cell.kind !== 'block') {
+        UDM.Audio.deny();
+        this.setBanner('Da liegt kein Bauteil', 1.2);
+        return;
+      }
+
+      if (this.cfg.mode === 'online') {
+        this.removeOnline();
+        return;
+      }
+
+      this.level.removeBlockAt(this.build.tx, this.build.ty);
+      builder.removesLeft = this.removesLeft(builder) - 1;
+      this.build.deleting = false;
+      this.level.burst(this.build.tx * TILE + TILE / 2, this.build.ty * TILE + TILE / 2, '#ffffff', 12);
+      UDM.Audio.place();
+      UDM.Render.kick(2);
+      this.updateHud();
     },
 
     advanceBuild: function () {
       this.build.idx++;
       this.build.card = 0;
       this.build.rot = 0;
+      this.build.deleting = false;
       if (this.build.idx >= this.build.order.length) {
         this.beginParty();
       } else {
@@ -397,6 +499,12 @@
       var finishers = players.filter(function (p) { return p.finished; });
       var entries = [];
 
+      // Wer war zuerst da?
+      var first = null;
+      finishers.forEach(function (p) {
+        if (!first || p.time < first.time) { first = p; }
+      });
+
       players.forEach(function (p) {
         var delta = 0;
         var reasons = [];
@@ -404,6 +512,10 @@
         if (p.finished) {
           delta += 1;
           reasons.push({ text: 'Ziel erreicht', points: 1 });
+          if (p === first && players.length > 1) {
+            delta += 1;
+            reasons.push({ text: 'Erster im Ziel', points: 1 });
+          }
           if (finishers.length === 1 && players.length > 1) {
             delta += 2;
             reasons.push({ text: 'Einziger im Ziel', points: 2 });
@@ -438,7 +550,12 @@
         });
       });
 
-      return { round: this.round, entries: entries, anyFinisher: finishers.length > 0 };
+      return {
+        round: this.round,
+        entries: entries,
+        anyFinisher: finishers.length > 0,
+        firstSlot: first ? first.slot : null
+      };
     },
 
     finishRoundLocal: function () {
@@ -626,6 +743,25 @@
         rot: this.build.rot
       }).then(function (data) {
         self.build.busy = false;
+        self.build.card = 0;
+        self.build.rot = 0;
+        UDM.Audio.place();
+        UDM.Render.kick(2);
+        self.applyServerState(data.state);
+      }).catch(function (err) {
+        self.build.busy = false;
+        UDM.Audio.deny();
+        self.setBanner(err.message || 'Das hat nicht geklappt.', 1.8);
+        if (err.state) { self.applyServerState(err.state); }
+      });
+    },
+
+    removeOnline: function () {
+      var self = this;
+      this.build.busy = true;
+      this.net.call('remove', { x: this.build.tx, y: this.build.ty }).then(function (data) {
+        self.build.busy = false;
+        self.build.deleting = false;
         UDM.Audio.place();
         UDM.Render.kick(2);
         self.applyServerState(data.state);
@@ -720,21 +856,28 @@
         return;
       }
 
+      var places = this.placesLeft(builder);
+      var removes = this.removesLeft(builder);
+      var quota = '<span class="quota"><b>' + places + '</b> Bauteil' + (places === 1 ? '' : 'e') +
+        ' · <b>' + removes + '</b> Löschung' + (removes === 1 ? '' : 'en') + ' übrig</span>';
+
       this.dom['turn-info'].innerHTML = mine
-        ? '<strong style="color:' + builder.color + '">' + UDM.escapeHtml(builder.name) + '</strong> ist am Zug – Bauteil wählen und platzieren'
+        ? '<strong style="color:' + builder.color + '">' + UDM.escapeHtml(builder.name) +
+          '</strong> ist am Zug<br>' + quota
         : '<strong style="color:' + builder.color + '">' + UDM.escapeHtml(builder.name) + '</strong> baut gerade …';
 
-      if (!mine || !builder.hand || !builder.hand.length) {
+      if (!mine) {
         this.dom.hand.innerHTML = '';
         return;
       }
 
       var cards = this.cfg.cards;
       var html = '';
-      for (var i = 0; i < builder.hand.length; i++) {
-        var id = builder.hand[i];
+      var hand = builder.hand || [];
+      for (var i = 0; i < hand.length; i++) {
+        var id = hand[i];
         var meta = cards[id] || { name: id, desc: '' };
-        var selected = i === this.build.card ? ' selected' : '';
+        var selected = (i === this.build.card && !this.build.deleting) ? ' selected' : '';
         html += '<button class="card' + selected + '" data-card="' + i + '" title="' +
           UDM.escapeHtml(meta.desc) + '">' +
           '<span class="ckey">' + (i + 1) + '</span>' +
@@ -745,9 +888,18 @@
 
       var type = this.selectedType();
       var rotatable = type && UDM.BLOCKS[type] && UDM.BLOCKS[type].rotatable;
-      html += '<button class="card rotate' + (rotatable ? '' : ' disabled') + '" data-card="-1" data-rotate="1">' +
+      var dirLabel = ['nach oben', 'nach rechts', 'nach unten', 'nach links'][this.build.rot];
+      html += '<button class="card rotate' + (rotatable ? '' : ' disabled') +
+        '" data-card="-1" data-rotate="1" title="Bauteil drehen (Taste R)">' +
         '<span class="ckey">R</span><span class="rot-icon" style="transform:rotate(' +
-        (this.build.rot * 90) + 'deg)">↑</span><span class="cname">Drehen</span></button>';
+        (this.build.rot * 90 - 90) + 'deg)">➤</span>' +
+        '<span class="cname">' + (rotatable ? dirLabel : 'Drehen') + '</span></button>';
+
+      html += '<button class="card erase' + (this.build.deleting ? ' selected' : '') +
+        (removes > 0 ? '' : ' disabled') + '" data-card="-2" data-erase="1"' +
+        ' title="Ein liegendes Bauteil entfernen (Taste X oder Rechtsklick)">' +
+        '<span class="ckey">X</span><span class="rot-icon">✖</span>' +
+        '<span class="cname">Löschen</span></button>';
 
       this.dom.hand.innerHTML = html;
       this.paintCardIcons();
@@ -792,8 +944,8 @@
     renderHints: function () {
       var html = '';
       if (this.phase === 'build') {
-        html = '<span><b>Maus</b> platzieren</span><span><b>1-4</b> Bauteil</span><span><b>R</b> drehen</span>' +
-          '<span>oder eigene Tasten + <b>Enter</b></span>';
+        html = '<span><b>Maus</b> platzieren</span><span><b>1-4</b> Bauteil</span>' +
+          '<span><b>R</b> drehen</span><span><b>X</b> / Rechtsklick löschen</span>';
       } else if (this.cfg.mode === 'online') {
         html = '<span><b>' + UDM.SOLO_LAYOUT.label + '</b></span><span>Wandsprung: an der Wand springen</span>';
       } else {
@@ -915,10 +1067,13 @@
         '<ol class="rules">' +
         '<li><b>Jedes Level ist ohne ein einziges Bauteil zu schaffen.</b> ' +
         'Alles, was gebaut wird, ist ein Hindernis \u2013 keine Hilfe.</li>' +
-        '<li><b>Bauphase:</b> Jeder setzt der Reihe nach ein Bauteil ins Level. Es bleibt das ganze Match liegen.</li>' +
+        '<li><b>Bauphase:</b> Der Reihe nach setzt jeder <b>zwei Bauteile</b> ' +
+        'und darf dabei <b>ein liegendes entfernen</b> (Taste X oder Rechtsklick). ' +
+        'Alles Gesetzte bleibt das ganze Match liegen.</li>' +
         '<li><b>Partyphase:</b> Alle rennen gleichzeitig los und versuchen, die Fahne zu erreichen.</li>' +
-        '<li><b>Punkte:</b> Ziel erreicht <b>+1</b>, einziger im Ziel <b>+2</b> extra, ' +
-        'ein Gegner stirbt an deinem Bauteil <b>+1</b>, du stirbst an deinem eigenen <b>-1</b>.</li>' +
+        '<li><b>Punkte:</b> Ziel erreicht <b>+1</b>, erster im Ziel <b>+1</b> extra, ' +
+        'einziger im Ziel <b>+2</b> extra, ein Gegner stirbt an deinem Bauteil <b>+1</b>, ' +
+        'du stirbst an deinem eigenen <b>-1</b>.</li>' +
         '<li>Wer zuerst <b>' + this.targetScore + ' Punkte</b> hat und allein vorn liegt, gewinnt.</li>' +
         '<li>Kommt <b>drei Runden lang niemand</b> ins Ziel, wird das Level komplett ger\u00e4umt.</li>' +
         '</ol>' +
@@ -1047,6 +1202,7 @@
           rot: this.build.rot,
           type: this.selectedType(),
           valid: this.build.valid,
+          deleting: this.build.deleting,
           color: builder.color
         } : null
       });

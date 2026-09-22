@@ -4,6 +4,7 @@
 
   var UDM = global.UDM;
   var TILE = UDM.TILE;
+  var DIRS = UDM.DIRS;
 
   /* Die Huegel sind bewusst dunstig und blaustichig gehalten: sie duerfen
    * nie mit dem begehbaren Gelaende verwechselt werden. */
@@ -54,6 +55,7 @@
 
       this.drawSky(ctx, level, w, h, time);
       this.drawTerrain(ctx, level);
+      this.drawBounds(ctx, w, h);
       this.drawStreams(ctx, level, time);
       this.drawBlocks(ctx, level, time);
       this.drawGoal(ctx, level, time);
@@ -122,6 +124,43 @@
         var cy = 50 + rand() * 180;
         this.drawCloud(ctx, cx, cy, 34 + rand() * 26);
       }
+    },
+
+    /** Unsichtbare Wand links und rechts - hier wird sie sichtbar gemacht. */
+    drawBounds: function (ctx, w, h) {
+      var width = 16;
+      ctx.save();
+
+      // Dunkler Verlauf nach innen - sichtbar auf hellem wie dunklem Himmel.
+      ['left', 'right'].forEach(function (side) {
+        var outer = side === 'left' ? 0 : w;
+        var inner = side === 'left' ? width : w - width;
+        var grad = ctx.createLinearGradient(outer, 0, inner, 0);
+        grad.addColorStop(0, 'rgba(10,12,26,0.42)');
+        grad.addColorStop(1, 'rgba(10,12,26,0)');
+        ctx.fillStyle = grad;
+        ctx.fillRect(Math.min(outer, inner), 0, width, h);
+      });
+
+      // Schraffur in Warnfarbe, damit es nach Absperrung aussieht.
+      ctx.beginPath();
+      ctx.rect(0, 0, width, h);
+      ctx.rect(w - width, 0, width, h);
+      ctx.clip();
+      ctx.strokeStyle = 'rgba(255,220,120,0.3)';
+      ctx.lineWidth = 4;
+      for (var y = -width * 2; y < h + width; y += 18) {
+        ctx.beginPath();
+        ctx.moveTo(-2, y); ctx.lineTo(width + 2, y + width + 4);
+        ctx.moveTo(w - width - 2, y); ctx.lineTo(w + 2, y + width + 4);
+        ctx.stroke();
+      }
+      ctx.restore();
+
+      ctx.fillStyle = 'rgba(255,220,120,0.55)';
+      ctx.fillRect(0, 0, 3, h);
+      ctx.fillRect(w - 3, 0, 3, h);
+      ctx.lineWidth = 1;
     },
 
     drawHills: function (ctx, w, h, color, baseY, amp, rand) {
@@ -215,6 +254,10 @@
         this.drawBlock(ctx, cell, x, y, time);
         ctx.restore();
 
+        if (!cell.broken && cell.spec.rotatable) {
+          this.drawDirectionBadge(ctx, x, y, cell.rot);
+        }
+
         if (!cell.broken && cell.ownerSlot >= 0) {
           ctx.fillStyle = UDM.SLOT_COLORS[cell.ownerSlot % 3];
           ctx.globalAlpha = 0.9;
@@ -222,6 +265,35 @@
           ctx.globalAlpha = 1;
         }
       }
+    },
+
+    /** Kleiner Pfeil an der Kachelkante: in diese Richtung wirkt das Bauteil. */
+    drawDirectionBadge: function (ctx, x, y, rot, strong) {
+      var dir = DIRS[rot] || DIRS[0];
+      var inset = strong ? 4 : 6;
+      var cx = x + TILE / 2 + dir.dx * (TILE / 2 - inset);
+      var cy = y + TILE / 2 + dir.dy * (TILE / 2 - inset);
+
+      var size = strong ? 8 : 6;
+      ctx.save();
+      ctx.translate(cx, cy);
+      ctx.rotate(rot * Math.PI / 2);
+
+      // Heller Pfeil mit dunkler Kontur - so bleibt er auf jedem Bauteil lesbar.
+      ctx.beginPath();
+      ctx.moveTo(0, -size);
+      ctx.lineTo(size * 0.85, size * 0.5);
+      ctx.lineTo(0, size * 0.1);
+      ctx.lineTo(-size * 0.85, size * 0.5);
+      ctx.closePath();
+      ctx.fillStyle = strong ? '#ffe08a' : 'rgba(255,255,255,0.95)';
+      ctx.strokeStyle = 'rgba(15,17,28,0.8)';
+      ctx.lineWidth = strong ? 2 : 1.4;
+      ctx.stroke();
+      ctx.fill();
+      ctx.restore();
+      ctx.globalAlpha = 1;
+      ctx.lineWidth = 1;
     },
 
     drawBlock: function (ctx, cell, x, y, time) {
@@ -770,6 +842,216 @@
 
     /* --------------------------------------------------------- Bauphase */
 
+    /** Wie weit reicht etwas von dieser Kachel aus in Richtung dir? */
+    reach: function (level, tx, ty, dir, max) {
+      var count = 0;
+      for (var i = 1; i <= max; i++) {
+        var x = tx + dir.dx * i;
+        var y = ty + dir.dy * i;
+        if (!level.inBounds(x, y) || level.isSolid(x, y)) { break; }
+        count = i;
+      }
+      return count;
+    },
+
+    arrowHead: function (ctx, x, y, dir, size) {
+      var angle = Math.atan2(dir.dy, dir.dx);
+      ctx.save();
+      ctx.translate(x, y);
+      ctx.rotate(angle);
+      ctx.beginPath();
+      ctx.moveTo(size, 0);
+      ctx.lineTo(-size * 0.7, size * 0.7);
+      ctx.lineTo(-size * 0.7, -size * 0.7);
+      ctx.closePath();
+      ctx.fill();
+      ctx.restore();
+    },
+
+    /**
+     * Zeigt vor dem Setzen, was das Bauteil anrichtet: Reichweite des
+     * Luftstroms, Schussbahn, Pendelweg, Saegenschiene, Rutschrichtung.
+     */
+    effectHints: {
+      fan: function (ctx, level, tx, ty, rot, time) {
+        var dir = DIRS[rot];
+        var count = this.reach(level, tx, ty, dir, 5);
+        ctx.fillStyle = 'rgba(255,255,255,0.16)';
+        for (var i = 1; i <= count; i++) {
+          var x = (tx + dir.dx * i) * TILE;
+          var y = (ty + dir.dy * i) * TILE;
+          ctx.fillRect(x + 4, y + 4, TILE - 8, TILE - 8);
+        }
+        ctx.fillStyle = '#ffffff';
+        for (var k = 1; k <= count; k++) {
+          this.arrowHead(ctx,
+            (tx + dir.dx * k) * TILE + TILE / 2,
+            (ty + dir.dy * k) * TILE + TILE / 2, dir, 6);
+        }
+      },
+
+      arrow: function (ctx, level, tx, ty, rot) {
+        var dir = DIRS[rot];
+        var count = this.reach(level, tx, ty, dir, 24);
+        var fromX = tx * TILE + TILE / 2 + dir.dx * TILE / 2;
+        var fromY = ty * TILE + TILE / 2 + dir.dy * TILE / 2;
+        var toX = fromX + dir.dx * count * TILE;
+        var toY = fromY + dir.dy * count * TILE;
+
+        ctx.save();
+        ctx.setLineDash([7, 5]);
+        ctx.strokeStyle = 'rgba(255,90,90,0.85)';
+        ctx.lineWidth = 2;
+        ctx.beginPath();
+        ctx.moveTo(fromX, fromY);
+        ctx.lineTo(toX, toY);
+        ctx.stroke();
+        ctx.restore();
+        ctx.fillStyle = 'rgba(255,90,90,0.95)';
+        this.arrowHead(ctx, toX, toY, dir, 7);
+      },
+
+      saw: function (ctx, level, tx, ty, rot) {
+        var vertical = rot === 0 || rot === 2;
+        var back = this.reach(level, tx, ty, vertical ? DIRS[0] : DIRS[3], 3);
+        var forward = this.reach(level, tx, ty, vertical ? DIRS[2] : DIRS[1], 3);
+        var a = (vertical ? ty - back : tx - back) * TILE + TILE / 2;
+        var b = (vertical ? ty + forward : tx + forward) * TILE + TILE / 2;
+        var fixed = (vertical ? tx : ty) * TILE + TILE / 2;
+
+        ctx.save();
+        ctx.strokeStyle = 'rgba(255,90,90,0.8)';
+        ctx.lineWidth = 3;
+        ctx.beginPath();
+        if (vertical) { ctx.moveTo(fixed, a); ctx.lineTo(fixed, b); }
+        else { ctx.moveTo(a, fixed); ctx.lineTo(b, fixed); }
+        ctx.stroke();
+
+        ctx.setLineDash([4, 4]);
+        ctx.lineWidth = 2;
+        [a, b].forEach(function (pos) {
+          ctx.beginPath();
+          ctx.arc(vertical ? fixed : pos, vertical ? pos : fixed, 13, 0, Math.PI * 2);
+          ctx.stroke();
+        });
+        ctx.restore();
+      },
+
+      wrecker: function (ctx, level, tx, ty) {
+        var count = Math.max(1, this.reach(level, tx, ty, DIRS[2], 4));
+        var length = count * TILE;
+        var ax = tx * TILE + TILE / 2;
+        var ay = ty * TILE + TILE / 2;
+        var maxAngle = 1.15;
+
+        ctx.save();
+        ctx.strokeStyle = 'rgba(255,90,90,0.8)';
+        ctx.lineWidth = 2;
+        ctx.setLineDash([5, 5]);
+        ctx.beginPath();
+        ctx.arc(ax, ay, length, Math.PI / 2 - maxAngle, Math.PI / 2 + maxAngle);
+        ctx.stroke();
+
+        [-maxAngle, maxAngle].forEach(function (angle) {
+          var bx = ax + Math.sin(angle) * length;
+          var by = ay + Math.cos(angle) * length;
+          ctx.beginPath();
+          ctx.moveTo(ax, ay);
+          ctx.lineTo(bx, by);
+          ctx.stroke();
+          ctx.beginPath();
+          ctx.arc(bx, by, 12, 0, Math.PI * 2);
+          ctx.stroke();
+        });
+        ctx.restore();
+      },
+
+      spike: function (ctx, level, tx, ty, rot) {
+        var rect = {
+          0: { x: 3, y: TILE - 12, w: TILE - 6, h: 12 },
+          1: { x: TILE - 12, y: 3, w: 12, h: TILE - 6 },
+          2: { x: 3, y: 0, w: TILE - 6, h: 12 },
+          3: { x: 0, y: 3, w: 12, h: TILE - 6 }
+        }[rot];
+        ctx.fillStyle = 'rgba(255,80,80,0.45)';
+        ctx.fillRect(tx * TILE + rect.x, ty * TILE + rect.y, rect.w, rect.h);
+      },
+
+      conveyor: function (ctx, level, tx, ty, rot) {
+        var dir = rot === 3 ? DIRS[3] : DIRS[1];
+        ctx.fillStyle = '#ffb703';
+        for (var i = 0; i < 2; i++) {
+          this.arrowHead(ctx,
+            tx * TILE + TILE / 2 + dir.dx * (10 + i * 12),
+            ty * TILE + TILE / 2, dir, 7);
+        }
+      },
+
+      bounce: function (ctx, level, tx, ty) {
+        var cx = tx * TILE + TILE / 2;
+        ctx.save();
+        ctx.strokeStyle = 'rgba(120,230,160,0.9)';
+        ctx.lineWidth = 2;
+        ctx.setLineDash([5, 4]);
+        ctx.beginPath();
+        ctx.moveTo(cx, ty * TILE);
+        ctx.quadraticCurveTo(cx + 22, ty * TILE - 52, cx + 46, ty * TILE - 20);
+        ctx.stroke();
+        ctx.restore();
+        ctx.fillStyle = 'rgba(120,230,160,0.95)';
+        this.arrowHead(ctx, cx + 46, ty * TILE - 20, { dx: 0.7, dy: 0.7 }, 7);
+      },
+
+      ice: function (ctx, level, tx, ty) {
+        ctx.fillStyle = 'rgba(170,230,255,0.95)';
+        this.arrowHead(ctx, tx * TILE + TILE - 4, ty * TILE - 7, DIRS[1], 6);
+        this.arrowHead(ctx, tx * TILE + 4, ty * TILE - 7, DIRS[3], 6);
+      },
+
+      oil: function (ctx, level, tx, ty) {
+        ctx.fillStyle = 'rgba(190,160,255,0.95)';
+        this.arrowHead(ctx, tx * TILE + TILE - 4, ty * TILE + TILE - 16, DIRS[1], 6);
+        this.arrowHead(ctx, tx * TILE + 4, ty * TILE + TILE - 16, DIRS[3], 6);
+      },
+
+      honey: function (ctx, level, tx, ty) {
+        ctx.save();
+        ctx.strokeStyle = 'rgba(240,200,110,0.95)';
+        ctx.lineWidth = 3;
+        ctx.beginPath();
+        ctx.moveTo(tx * TILE + 8, ty * TILE - 8);
+        ctx.lineTo(tx * TILE + TILE - 14, ty * TILE - 8);
+        ctx.stroke();
+        ctx.restore();
+        ctx.fillStyle = 'rgba(240,200,110,0.95)';
+        this.arrowHead(ctx, tx * TILE + TILE - 9, ty * TILE - 8, DIRS[1], 5);
+      },
+
+      crumble: function (ctx, level, tx, ty, rot, time) {
+        ctx.save();
+        ctx.setLineDash([4, 4]);
+        ctx.strokeStyle = 'rgba(255,200,120,0.9)';
+        ctx.lineWidth = 2;
+        ctx.strokeRect(tx * TILE + 2, (ty + 1) * TILE + 4, TILE - 4, 10);
+        ctx.restore();
+        ctx.fillStyle = 'rgba(255,200,120,0.9)';
+        for (var i = 0; i < 3; i++) {
+          var drop = ((time * 40 + i * 9) % 18);
+          ctx.fillRect(tx * TILE + 7 + i * 9, (ty + 1) * TILE + drop - 4, 3, 3);
+        }
+      }
+    },
+
+    drawEffectHint: function (ctx, level, type, tx, ty, rot, time) {
+      var hint = this.effectHints[type];
+      if (!hint) { return; }
+      ctx.save();
+      hint.call(this, ctx, level, tx, ty, rot, time);
+      ctx.restore();
+      ctx.lineWidth = 1;
+      ctx.setLineDash([]);
+    },
+
     drawBuildOverlay: function (ctx, state) {
       var build = state.build;
       var level = state.level;
@@ -790,31 +1072,50 @@
         var y = build.ty * TILE;
         var ok = build.valid;
 
-        if (ok && build.type) {
-          ctx.globalAlpha = 0.65;
-          this.drawBlock(ctx, {
-            type: build.type,
-            tx: build.tx,
-            ty: build.ty,
-            rot: build.rot,
-            spec: UDM.BLOCKS[build.type],
-            broken: false,
-            touch: -1,
-            shake: 0
-          }, x, y, state.time);
-          ctx.globalAlpha = 1;
-        }
-
-        ctx.lineWidth = 3;
-        ctx.strokeStyle = ok ? build.color : 'rgba(255,80,80,0.95)';
-        ctx.strokeRect(x + 1.5, y + 1.5, TILE - 3, TILE - 3);
-        if (!ok) {
+        if (build.deleting) {
+          // Loeschvorschau: das getroffene Bauteil rot durchgestrichen.
+          ctx.fillStyle = ok ? 'rgba(255,80,80,0.3)' : 'rgba(255,255,255,0.07)';
+          ctx.fillRect(x, y, TILE, TILE);
+          ctx.strokeStyle = ok ? 'rgba(255,90,90,0.95)' : 'rgba(255,255,255,0.3)';
+          ctx.lineWidth = 3;
+          ctx.strokeRect(x + 1.5, y + 1.5, TILE - 3, TILE - 3);
           ctx.beginPath();
-          ctx.moveTo(x + 6, y + 6); ctx.lineTo(x + TILE - 6, y + TILE - 6);
-          ctx.moveTo(x + TILE - 6, y + 6); ctx.lineTo(x + 6, y + TILE - 6);
+          ctx.moveTo(x + 8, y + 8); ctx.lineTo(x + TILE - 8, y + TILE - 8);
+          ctx.moveTo(x + TILE - 8, y + 8); ctx.lineTo(x + 8, y + TILE - 8);
           ctx.stroke();
+          ctx.lineWidth = 1;
+        } else {
+          if (ok && build.type) {
+            this.drawEffectHint(ctx, level, build.type, build.tx, build.ty, build.rot, state.time);
+            ctx.globalAlpha = 0.7;
+            this.drawBlock(ctx, {
+              type: build.type,
+              tx: build.tx,
+              ty: build.ty,
+              rot: build.rot,
+              spec: UDM.BLOCKS[build.type],
+              broken: false,
+              touch: -1,
+              shake: 0,
+              id: 1
+            }, x, y, state.time);
+            ctx.globalAlpha = 1;
+            if (UDM.BLOCKS[build.type] && UDM.BLOCKS[build.type].rotatable) {
+              this.drawDirectionBadge(ctx, x, y, build.rot, true);
+            }
+          }
+
+          ctx.lineWidth = 3;
+          ctx.strokeStyle = ok ? build.color : 'rgba(255,80,80,0.95)';
+          ctx.strokeRect(x + 1.5, y + 1.5, TILE - 3, TILE - 3);
+          if (!ok) {
+            ctx.beginPath();
+            ctx.moveTo(x + 6, y + 6); ctx.lineTo(x + TILE - 6, y + TILE - 6);
+            ctx.moveTo(x + TILE - 6, y + 6); ctx.lineTo(x + 6, y + TILE - 6);
+            ctx.stroke();
+          }
+          ctx.lineWidth = 1;
         }
-        ctx.lineWidth = 1;
       }
 
       // Start- und Zielbereich markieren.

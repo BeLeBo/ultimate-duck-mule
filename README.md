@@ -15,9 +15,10 @@ also nur, um den anderen den Weg zu verderben.
 
 Jede Runde besteht aus zwei Phasen:
 
-1. **Bauphase** – Der Reihe nach setzt jeder Spieler genau *ein* Bauteil aus seiner
-   Hand ins Level. Die Bauteile bleiben das ganze Match liegen, das Level wird also
-   Runde für Runde gemeiner.
+1. **Bauphase** – Der Reihe nach setzt jeder Spieler *zwei* Bauteile aus seiner Hand
+   und darf dabei *ein bereits liegendes entfernen* (Taste `X` oder Rechtsklick) –
+   egal von wem es stammt. Alles Gesetzte bleibt das ganze Match liegen, das Level
+   wird also Runde für Runde gemeiner.
 2. **Partyphase** – Alle starten gleichzeitig und versuchen, die Fahne zu erreichen.
    Wer stirbt, schaut den Rest der Runde zu.
 
@@ -29,6 +30,7 @@ wird komplett geräumt – so kann sich ein Match nicht festfahren.
 | Ereignis | Punkte |
 | --- | --- |
 | Ziel erreicht | **+1** |
+| Erster im Ziel | **+1** zusätzlich |
 | Einziger im Ziel | **+2** zusätzlich |
 | Ein Gegner stirbt an einem deiner Bauteile | **+1** pro Opfer |
 | Du stirbst an deinem eigenen Bauteil | **−1** |
@@ -109,14 +111,18 @@ Erweiterung aus.
 | 2 | `←` / `→` | `↑` | `↓` |
 | 3 | `J` / `L` | `I` | `K` |
 
-In der Bauphase platziert der Spieler, der am Zug ist, sein Bauteil mit der **Maus**
-(`1`–`4` wählt das Bauteil, `R` dreht es). Wer keine Maus benutzen will, bewegt den
-Bauzeiger mit den eigenen Laufen-/Springen-Tasten und platziert mit `Enter`.
+In der Bauphase platziert der Spieler, der am Zug ist, seine Bauteile mit der
+**Maus**: `1`–`4` wählt das Bauteil, `R` dreht es, `X` oder Rechtsklick entfernt
+ein liegendes. Die Vorschau am Mauszeiger zeigt vorher, was das Bauteil anrichtet –
+Reichweite des Luftstroms, Schussbahn, Pendelweg, Sägenschiene. Wer keine Maus
+benutzen will, bewegt den Bauzeiger mit den eigenen Laufen-/Springen-Tasten und
+platziert mit `Enter`.
 
 ### Online mit Raumcode
 
-Ein Spieler erstellt einen Raum und gibt den vierstelligen Code weiter; bis zu drei
-Spieler können beitreten. Die Steuerung ist dann `A`/`D` **oder** die Pfeiltasten.
+Name und Figur trägt man **einmal** ein – sie gelten fürs Erstellen wie fürs
+Beitreten. Ein Spieler erstellt einen Raum und gibt den vierstelligen Code weiter;
+bis zu drei Spieler können beitreten. Die Steuerung ist dann `A`/`D` **oder** die Pfeiltasten.
 
 Aufteilung der Verantwortung:
 
@@ -158,7 +164,8 @@ Laufen mit Beschleunigung und Reibung, variable Sprunghöhe (Taste früher losla
 = niedriger springen), Coyote-Time und Sprungpuffer für zuverlässige Kantensprünge,
 Wandrutschen und **Wandsprung**. Ein Sprung schafft rund 3,3 Kacheln Höhe und aus
 vollem Lauf gut 5 Kacheln Weite – die Level halten überall reichlich Abstand
-darunter.
+darunter. Links und rechts begrenzen unsichtbare Banden das Spielfeld;
+herauslaufen geht nicht, nur nach unten fällt man.
 
 ## Selbsttest
 

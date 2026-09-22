@@ -55,6 +55,12 @@
 
   Level.prototype.index = function (tx, ty) { return ty * this.cols + tx; };
 
+  /** Fortlaufende Kennung - Saegen und Pendel leiten ihre Phase daraus ab. */
+  Level.prototype.nextId = function () {
+    this.idCounter = (this.idCounter || 0) + 1;
+    return this.idCounter;
+  };
+
   Level.prototype.inBounds = function (tx, ty) {
     return tx >= 0 && ty >= 0 && tx < this.cols && ty < this.rows;
   };
@@ -64,8 +70,15 @@
     return this.cells[this.index(tx, ty)] || null;
   };
 
-  /** Ist die Kachel gerade ein Hindernis? Bruchbloecke zaehlen nur ungebrochen. */
+  /**
+   * Ist die Kachel gerade ein Hindernis? Bruchbloecke zaehlen nur ungebrochen.
+   *
+   * Links und rechts begrenzen unsichtbare Banden das Spielfeld, damit niemand
+   * aus dem Bild laufen kann. Oben bleibt offen (Sprünge), unten geht es in
+   * den Abgrund.
+   */
   Level.prototype.isSolid = function (tx, ty) {
+    if (tx < 0 || tx >= this.cols) { return true; }
     var cell = this.cell(tx, ty);
     if (!cell || !cell.spec.solid) { return false; }
     if (cell.broken) { return false; }
@@ -104,8 +117,10 @@
     }
 
     this.blocks = [];
+    this.idCounter = 0;
     for (i = 0; i < blocks.length; i++) {
       this.addBlock(blocks[i], true);
+      this.idCounter = Math.max(this.idCounter, blocks[i].id || 0);
     }
     this.refreshDynamics();
   };
@@ -131,6 +146,18 @@
     this.blocks.push(cell);
     if (!skipRefresh) { this.refreshDynamics(); }
     return cell;
+  };
+
+  /** Entfernt ein gesetztes Bauteil wieder. Gelaende bleibt unangetastet. */
+  Level.prototype.removeBlockAt = function (tx, ty) {
+    var cell = this.cell(tx, ty);
+    if (!cell || cell.kind !== 'block') { return false; }
+
+    this.cells[this.index(tx, ty)] = null;
+    var index = this.blocks.indexOf(cell);
+    if (index >= 0) { this.blocks.splice(index, 1); }
+    this.refreshDynamics();
+    return true;
   };
 
   Level.prototype.hasBlockAt = function (tx, ty) {

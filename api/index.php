@@ -217,6 +217,25 @@ try {
             respond(['ok' => true, 'state' => Game::publicState($room, $token)]);
             // no break
 
+        case 'remove':
+            [$code, $token] = credentials($data);
+            $error = null;
+            $room = Rooms::mutate($code, function (array $room) use ($token, $data, &$error): array {
+                heartbeat($room, $token, $data);
+                try {
+                    Game::removeBlock($room, $token, int_field($data, 'x', -1), int_field($data, 'y', -1));
+                } catch (Throwable $e) {
+                    $error = $e->getMessage();
+                }
+
+                return $room;
+            });
+            if ($error !== null) {
+                respond(['ok' => false, 'error' => $error, 'state' => Game::publicState($room, $token)], 409);
+            }
+            respond(['ok' => true, 'state' => Game::publicState($room, $token)]);
+            // no break
+
         case 'skip':
             [$code, $token] = credentials($data);
             $room = Rooms::mutate($code, function (array $room) use ($token, $data): array {

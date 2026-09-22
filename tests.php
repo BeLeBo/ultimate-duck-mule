@@ -430,6 +430,54 @@ foreach (Levels::all() as $level) {
     check('Pfeile bleiben an einer Wand hängen', p.alive, 'alive=' + p.alive);
   }());
 
+  /* --------------------------------------------------- Spielfeldgrenzen */
+
+  (function testLeftBoundary() {
+    var level = makeLevel(FLAT);
+    var p = makePlayer(1, 17);
+    simulate(p, level, 3, keys({ left: true }), { keepGoing: true });
+    check('Linke Bande stoppt die Figur am Spielfeldrand',
+      p.alive && p.x >= 0 && p.x < 4,
+      'x=' + p.x.toFixed(1) + ' (muss zwischen 0 und 4 liegen)');
+  }());
+
+  (function testRightBoundary() {
+    var level = makeLevel(FLAT);
+    var p = makePlayer(38, 17);
+    simulate(p, level, 3, keys({ right: true }), { keepGoing: true });
+    var maxX = UDM.COLS * TILE - UDM.PHYS.playerW;
+    check('Rechte Bande stoppt die Figur am Spielfeldrand',
+      p.alive && p.x <= maxX + 0.5 && p.x > maxX - 4,
+      'x=' + p.x.toFixed(1) + ' (Rand bei ' + maxX + ')');
+  }());
+
+  (function testRemoveBlock() {
+    var level = makeLevel(FLAT, [block('saw', 10, 17, 1, 1), block('stone', 12, 17)]);
+    var sawsBefore = level.saws.length;
+    var removed = level.removeBlockAt(10, 17);
+    var missed = level.removeBlockAt(5, 5);
+    var terrain = level.removeBlockAt(10, 18);
+    check('Bauteile lassen sich wieder entfernen',
+      removed && !missed && !terrain &&
+      level.blocks.length === 1 && sawsBefore === 1 && level.saws.length === 0,
+      'entfernt=' + removed + ', leere Kachel=' + missed + ', Gelände=' + terrain +
+      ', Sägen danach=' + level.saws.length);
+  }());
+
+  (function testRemovedBlockIsHarmless() {
+    var level = makeLevel(FLAT, [block('spike', 10, 17, 0, 2)]);
+    var victim = makePlayer(10, 17);
+    simulate(victim, level, 0.5, NONE);
+    var died = !victim.alive;
+
+    level.removeBlockAt(10, 17);
+    var survivor = makePlayer(10, 17);
+    simulate(survivor, level, 1, NONE, { keepGoing: true });
+    check('Nach dem Entfernen ist die Falle wirkungslos',
+      died && survivor.alive,
+      'vorher gestorben=' + died + ', danach am Leben=' + survivor.alive);
+  }());
+
   /* ------------------------------------ Level ohne Bauteile schaffbar */
 
   /**

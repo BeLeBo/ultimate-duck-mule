@@ -112,18 +112,24 @@ $characters = Game::CHARACTERS;
     <h2>Online spielen</h2>
     <p class="muted">Ein Spieler erstellt einen Raum und gibt den Code weiter &ndash; bis zu 3 Spieler.</p>
 
-    <div class="grid two">
+    <div class="seat" style="margin-bottom:16px">
+      <canvas class="seat-canvas" width="54" height="54" data-slot="0" id="online-avatar"></canvas>
       <div>
-        <h3>Raum erstellen</h3>
-        <label for="host-name">Dein Name</label>
-        <input type="text" id="host-name" maxlength="14" value="Gastgeber" autocomplete="off">
-        <div class="chars" data-charpick="host" style="margin:8px 0 12px">
+        <label for="online-name">Dein Name &ndash; gilt f&uuml;r beides</label>
+        <input type="text" id="online-name" maxlength="14" value="Spieler" autocomplete="off">
+        <div class="chars" data-charpick="online">
           <?php $ci = 0; foreach ($characters as $char): ?>
             <button type="button" data-char="<?= htmlspecialchars($char, ENT_QUOTES) ?>" class="<?= $ci === 0 ? 'on' : '' ?>">
               <?= htmlspecialchars(['duck' => 'Ente', 'mule' => 'Maultier', 'racoon' => 'Waschbär'][$char] ?? $char, ENT_QUOTES) ?>
             </button>
           <?php $ci++; endforeach; ?>
         </div>
+      </div>
+    </div>
+
+    <div class="grid two">
+      <div>
+        <h3>Raum erstellen</h3>
         <div class="row" style="margin-bottom:12px">
           <div>
             <label for="host-level">Level</label>
@@ -147,24 +153,16 @@ $characters = Game::CHARACTERS;
         <label for="join-code">Raumcode</label>
         <input type="text" id="join-code" maxlength="6" placeholder="z.&nbsp;B. K7QM"
                style="text-transform:uppercase;letter-spacing:4px;font-weight:800" autocomplete="off">
-        <label for="join-name" style="margin-top:10px">Dein Name</label>
-        <input type="text" id="join-name" maxlength="14" value="Gast" autocomplete="off">
-        <div class="chars" data-charpick="join" style="margin:8px 0 12px">
-          <?php $ci = 0; foreach ($characters as $char): ?>
-            <button type="button" data-char="<?= htmlspecialchars($char, ENT_QUOTES) ?>" class="<?= $ci === 1 ? 'on' : '' ?>">
-              <?= htmlspecialchars(['duck' => 'Ente', 'mule' => 'Maultier', 'racoon' => 'Waschbär'][$char] ?? $char, ENT_QUOTES) ?>
-            </button>
-          <?php $ci++; endforeach; ?>
-        </div>
+        <p class="muted small" style="margin-top:10px">Den Code bekommst du vom Gastgeber.</p>
         <button type="button" class="big" id="btn-join">Beitreten</button>
       </div>
     </div>
 
     <div id="online-error" class="error-box hidden"></div>
     <div class="hint-box">
-      Online laufen Bauphase, Punkte und Rundenwechsel ueber den PHP-Server;
-      die Figuren werden per Polling synchronisiert. Auf einem gemeinsamen
-      LAN oder Webspace funktioniert das ohne weitere Software.
+      Online laufen Bauphase, Punkte und Rundenwechsel &uuml;ber den PHP-Server;
+      die Figuren werden per Polling synchronisiert. Im gemeinsamen WLAN oder
+      auf einem Webspace funktioniert das ohne weitere Software.
     </div>
   </section>
 
@@ -173,11 +171,11 @@ $characters = Game::CHARACTERS;
     <h2>Regeln</h2>
     <ol class="rules">
       <li><strong>Jedes Level ist ohne ein einziges Bauteil zu schaffen.</strong> Alles, was gebaut wird, ist ein Hindernis &ndash; es gibt keine Kletterhilfen.</li>
-      <li><strong>Bauphase:</strong> Der Reihe nach setzt jeder genau ein Bauteil aus seiner Hand ins Level. Die Bauteile bleiben das ganze Match liegen.</li>
+      <li><strong>Bauphase:</strong> Der Reihe nach setzt jeder <strong>zwei Bauteile</strong> aus seiner Hand und darf dabei <strong>ein bereits liegendes entfernen</strong> (Taste X oder Rechtsklick). Alles Gesetzte bleibt das ganze Match liegen.</li>
       <li><strong>Partyphase:</strong> Alle starten gleichzeitig und versuchen, die Fahne zu erreichen. Wer stirbt, schaut den Rest der Runde zu.</li>
-      <li><strong>Punkte:</strong> Ziel erreicht <b>+1</b> &middot; einziger im Ziel <b>+2</b> extra &middot;
-        ein Gegner stirbt an deinem Bauteil <b>+1</b> &middot; du stirbst an deinem eigenen Bauteil <b>-1</b>.
-        Unter 0 geht es nicht.</li>
+      <li><strong>Punkte:</strong> Ziel erreicht <b>+1</b> &middot; erster im Ziel <b>+1</b> extra &middot;
+        einziger im Ziel <b>+2</b> extra &middot; ein Gegner stirbt an deinem Bauteil <b>+1</b> &middot;
+        du stirbst an deinem eigenen Bauteil <b>-1</b>. Unter 0 geht es nicht.</li>
       <li><strong>Sieg:</strong> Wer nach einer Runde die Zielpunktzahl erreicht hat und allein vorne liegt, gewinnt.</li>
       <li><strong>Bewegung:</strong> Laufen, springen, an W&auml;nden abrutschen und abspringen (Wandsprung).</li>
       <li>Kommt <strong>drei Runden lang niemand</strong> ins Ziel, ist das Level zugebaut und wird ger&auml;umt.</li>
@@ -241,7 +239,9 @@ $characters = Game::CHARACTERS;
     UDM.Render.drawPlayer(ctx, p, time, false);
   }
 
-  var seats = Array.prototype.slice.call(document.querySelectorAll('.seat'));
+  // Nur die Sitzplaetze des lokalen Spiels - der Online-Block nutzt dieselbe
+  // Optik, hat aber kein data-seat und darf hier nicht mitlaufen.
+  var seats = Array.prototype.slice.call(document.querySelectorAll('.seat[data-seat]'));
   var mascots = [document.getElementById('mascot0'), document.getElementById('mascot1')];
 
   function currentChar(index) {
@@ -256,6 +256,9 @@ $characters = Game::CHARACTERS;
     });
     paint(mascots[0], 0, 'duck', time);
     paint(mascots[1], 1, 'mule', time + 1);
+
+    var avatar = document.getElementById('online-avatar');
+    if (avatar) { paint(avatar, 0, currentChar('online'), time); }
   }
 
   /* -------------------------------------------------- Zeichenauswahl */
@@ -312,6 +315,10 @@ $characters = Game::CHARACTERS;
 
   /* ---------------------------------------------------------- Online */
   var errorBox = document.getElementById('online-error');
+
+  function onlineName() {
+    return document.getElementById('online-name').value;
+  }
   function showError(message) {
     errorBox.textContent = message;
     errorBox.classList.remove('hidden');
@@ -348,8 +355,8 @@ $characters = Game::CHARACTERS;
     errorBox.classList.add('hidden');
     api({
       action: 'create',
-      name: document.getElementById('host-name').value,
-      char: currentChar('host'),
+      name: onlineName(),
+      char: currentChar('online'),
       level: document.getElementById('host-level').value,
       target: parseInt(document.getElementById('host-target').value, 10) || 10
     }).then(enterRoom).catch(function (err) {
@@ -370,8 +377,8 @@ $characters = Game::CHARACTERS;
     api({
       action: 'join',
       code: code,
-      name: document.getElementById('join-name').value,
-      char: currentChar('join')
+      name: onlineName(),
+      char: currentChar('online')
     }).then(enterRoom).catch(function (err) {
       button.disabled = false;
       showError(err.message);

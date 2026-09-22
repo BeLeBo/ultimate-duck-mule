@@ -251,17 +251,21 @@
     this.x += dx;
     var y0 = Math.floor(this.y / TILE);
     var y1 = Math.floor((this.y + this.h - 1) / TILE);
-    var edge = dx > 0 ? Math.floor((this.x + this.w - 1) / TILE) : Math.floor(this.x / TILE);
+    // Rechte Kante ohne "-1": sonst darf die Figur bis zu einem Pixel in die
+    // Wand (und in die Bande am Spielfeldrand) hineinlaufen.
+    var edge = dx > 0 ? Math.floor((this.x + this.w) / TILE) : Math.floor(this.x / TILE);
 
     for (var ty = y0; ty <= y1; ty++) {
       if (!level.isSolid(edge, ty)) { continue; }
+      // cell ist null, wenn die Kachel ausserhalb liegt - dann ist es die
+      // Bande am Spielfeldrand und verhaelt sich wie eine schlichte Wand.
       var cell = level.cell(edge, ty);
       if (dx > 0) {
         this.x = edge * TILE - this.w;
       } else {
         this.x = (edge + 1) * TILE;
       }
-      if (cell.spec.bounce && Math.abs(this.vx) > 120) {
+      if (cell && cell.spec.bounce && Math.abs(this.vx) > 120) {
         this.vx = -this.vx * 0.85;
         this.face = this.vx > 0 ? 1 : -1;
         UDM.Audio.bounce();
@@ -300,7 +304,7 @@
         if (!level.isSolid(hx, headRow)) { continue; }
         var head = level.cell(hx, headRow);
         this.y = (headRow + 1) * TILE;
-        this.vy = head.spec.bounce ? 260 : 0;
+        this.vy = (head && head.spec.bounce) ? 260 : 0;
         return;
       }
     }

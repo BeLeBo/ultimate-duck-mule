@@ -17,6 +17,12 @@ final class Game
     public const MAX_PLAYERS = 3;
     public const MIN_PLAYERS = 2;
     public const HAND_SIZE = 4;
+
+    /** Bauteile, die ein Spieler pro Runde setzen darf. */
+    public const PLACES_PER_TURN = 2;
+
+    /** Bereits liegende Bauteile, die er dabei entfernen darf. */
+    public const REMOVES_PER_TURN = 1;
     public const MAX_BLOCKS = 320;
     public const DEFAULT_TARGET = 10;
 
@@ -88,6 +94,8 @@ final class Game
             'char' => self::cleanChar($char, $slot),
             'score' => 0,
             'hand' => [],
+            'places' => 0,
+            'removes' => 0,
             'placed' => false,
             'ready' => false,
             'result' => null,
@@ -165,6 +173,8 @@ final class Game
 
         foreach ($room['players'] as $token => &$player) {
             $player['hand'] = Cards::deal(self::HAND_SIZE);
+            $player['places'] = self::PLACES_PER_TURN;
+            $player['removes'] = self::REMOVES_PER_TURN;
             $player['placed'] = !in_array($token, $active, true);
             $player['ready'] = false;
             $player['result'] = null;
@@ -202,6 +212,9 @@ final class Game
         if (!Cards::exists($type)) {
             throw new RuntimeException('Unbekanntes Bauteil.');
         }
+        if ((int) $player['places'] <= 0) {
+            throw new RuntimeException('Du hast schon alles gesetzt.');
+        }
         if (count($room['blocks']) >= self::MAX_BLOCKS) {
             throw new RuntimeException('Das Level ist voll.');
         }
@@ -217,12 +230,63 @@ final class Game
             'rot' => Cards::isRotatable($type) ? (($rot % 4) + 4) % 4 : 0,
             'ownerSlot' => $player['slot'],
         ];
-        $player['placed'] = true;
-        $player['hand'] = [];
+
+        // Nur die benutzte Karte wandert aus der Hand, der Rest bleibt.
+        array_splice($player['hand'], $cardIndex, 1);
+        $player['places'] = (int) $player['places'] - 1;
+        $done = $player['places'] <= 0 || $player['hand'] === [];
+        if ($done) {
+            $player['placed'] = true;
+            $player['hand'] = [];
+        }
         unset($player);
 
         self::log($room, self::nameOf($room, $token) . ' setzt ' . Cards::CATALOG[$type]['name'] . '.');
-        self::advanceBuild($room);
+        if ($done) {
+            self::advanceBuild($room);
+        }
+        self::touch($room);
+    }
+
+    /**
+     * Entfernt ein bereits liegendes Bauteil - eigenes oder fremdes.
+     *
+     * @param array<string, mixed> $room
+     */
+    public static function removeBlock(array &$room, string $token, int $x, int $y): void
+    {
+        if ($room['phase'] !== 'build') {
+            throw new RuntimeException('Gerade ist keine Bauphase.');
+        }
+        if (self::currentBuilder($room) !== $token) {
+            throw new RuntimeException('Du bist nicht am Zug.');
+        }
+
+        $player = &$room['players'][$token];
+        if ((int) $player['removes'] <= 0) {
+            throw new RuntimeException('Du hast deine Löschung schon verbraucht.');
+        }
+
+        $index = null;
+        foreach ($room['blocks'] as $i => $block) {
+            if ((int) $block['x'] === $x && (int) $block['y'] === $y) {
+                $index = $i;
+                break;
+            }
+        }
+        if ($index === null) {
+            throw new RuntimeException('Da liegt kein Bauteil.');
+        }
+
+        $removed = $room['blocks'][$index];
+        array_splice($room['blocks'], $index, 1);
+        $player['removes'] = (int) $player['removes'] - 1;
+        unset($player);
+
+        self::log(
+            $room,
+            self::nameOf($room, $token) . ' entfernt ' . (Cards::CATALOG[$removed['type']]['name'] ?? 'ein Bauteil') . '.'
+        );
         self::touch($room);
     }
 
@@ -232,9 +296,11 @@ final class Game
         if ($room['phase'] !== 'build' || self::currentBuilder($room) !== $token) {
             return;
         }
+        $left = (int) $room['players'][$token]['places'];
         $room['players'][$token]['placed'] = true;
+        $room['players'][$token]['places'] = 0;
         $room['players'][$token]['hand'] = [];
-        self::log($room, self::nameOf($room, $token) . ' setzt nichts.');
+        self::log($room, self::nameOf($room, $token) . ($left >= self::PLACES_PER_TURN ? ' setzt nichts.' : ' ist fertig.'));
         self::advanceBuild($room);
         self::touch($room);
     }
@@ -346,6 +412,7 @@ final class Game
      *
      * Punktetabelle:
      *   +1  Ziel erreicht
+     *   +1  Bonus fuer die schnellste Zeit unter den Angekommenen
      *   +2  Bonus, wenn nur eine Figur das Ziel erreicht hat
      *   +1  je Gegner, der an einem eigenen Bauteil gestorben ist
      *   -1  am eigenen Bauteil gestorben
@@ -364,6 +431,17 @@ final class Game
             }
         }
 
+        // Wer war zuerst da? Bei gleicher Zeit gewinnt die Spielerreihenfolge.
+        $firstToken = null;
+        $bestTime = null;
+        foreach ($finishers as $token) {
+            $time = (float) ($room['players'][$token]['result']['time'] ?? 999);
+            if ($bestTime === null || $time < $bestTime) {
+                $bestTime = $time;
+                $firstToken = $token;
+            }
+        }
+
         $entries = [];
         foreach ($participants as $token) {
             $player = &$room['players'][$token];
@@ -374,6 +452,10 @@ final class Game
             if ($result !== null && $result['finished']) {
                 $delta += 1;
                 $reasons[] = ['text' => 'Ziel erreicht', 'points' => 1];
+                if ($token === $firstToken && count($participants) > 1) {
+                    $delta += 1;
+                    $reasons[] = ['text' => 'Erster im Ziel', 'points' => 1];
+                }
                 if (count($finishers) === 1 && count($participants) > 1) {
                     $delta += 2;
                     $reasons[] = ['text' => 'Einziger im Ziel', 'points' => 2];
@@ -437,6 +519,7 @@ final class Game
             'entries' => $entries,
             'anyFinisher' => count($finishers) > 0,
             'cleared' => $cleared,
+            'firstSlot' => $firstToken !== null ? (int) $room['players'][$firstToken]['slot'] : null,
         ];
 
         $room['phase'] = 'score';
@@ -525,6 +608,7 @@ final class Game
             if ($builderPlayer === null || !self::isConnected($builderPlayer) || $timedOut) {
                 if ($builder !== null) {
                     $room['players'][$builder]['placed'] = true;
+                    $room['players'][$builder]['places'] = 0;
                     $room['players'][$builder]['hand'] = [];
                 }
                 self::advanceBuild($room);
@@ -666,6 +750,8 @@ final class Game
                 'host' => $token === $room['hostToken'],
                 'handSize' => count($player['hand']),
                 'hand' => $isYou ? array_values($player['hand']) : [],
+                'places' => (int) ($player['places'] ?? 0),
+                'removes' => (int) ($player['removes'] ?? 0),
                 'pos' => $player['pos'],
                 'result' => $player['result'],
             ];
