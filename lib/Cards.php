@@ -9,78 +9,86 @@ declare(strict_types=1);
  */
 final class Cards
 {
-    /** @var array<string, array{name:string, desc:string, weight:int, rotatable:bool}> */
+    /**
+     * Alle Bauteile sind Hindernisse.
+     *
+     * Die Level lassen sich ohne ein einziges Bauteil schaffen - gebaut wird
+     * ausschliesslich, um den anderen den Weg zu verderben. Entsprechend
+     * gibt es hier nichts, womit man irgendwo hinaufklettern koennte.
+     *
+     * @var array<string, array{name:string, desc:string, weight:int, rotatable:bool}>
+     */
     public const CATALOG = [
         'stone' => [
             'name' => 'Steinblock',
-            'desc' => 'Solider Block. Langweilig, aber zuverlaessig.',
-            'weight' => 10,
+            'desc' => 'Versperrt den Weg. Schlicht und wirkungsvoll.',
+            'weight' => 9,
             'rotatable' => false,
         ],
         'ice' => [
             'name' => 'Eisblock',
-            'desc' => 'Solide, aber spiegelglatt.',
-            'weight' => 7,
-            'rotatable' => false,
-        ],
-        'bounce' => [
-            'name' => 'Sprungblock',
-            'desc' => 'Katapultiert alles, was darauf landet.',
+            'desc' => 'Versperrt den Weg – und wer oben landet, rutscht weiter.',
             'weight' => 7,
             'rotatable' => false,
         ],
         'crumble' => [
             'name' => 'Bruchblock',
-            'desc' => 'Bricht kurz nach der Beruehrung weg.',
+            'desc' => 'Sieht nach sicherem Halt aus und bricht dann weg.',
             'weight' => 6,
             'rotatable' => false,
-        ],
-        'cloud' => [
-            'name' => 'Wolke',
-            'desc' => 'Einweg-Plattform: von unten durchspringbar.',
-            'weight' => 6,
-            'rotatable' => false,
-        ],
-        'conveyor' => [
-            'name' => 'Foerderband',
-            'desc' => 'Schiebt alles in Pfeilrichtung.',
-            'weight' => 6,
-            'rotatable' => true,
         ],
         'honey' => [
             'name' => 'Klebeblock',
-            'desc' => 'Bremst gnadenlos, laesst sich aber beklettern.',
-            'weight' => 5,
+            'desc' => 'Wer hier drüber muss, kriecht nur noch.',
+            'weight' => 6,
             'rotatable' => false,
         ],
-        'ladder' => [
-            'name' => 'Leiter',
-            'desc' => 'Zum Hochklettern. Nicht solide.',
-            'weight' => 5,
+        'oil' => [
+            'name' => 'Ölpfütze',
+            'desc' => 'Nicht solide, dafür spiegelglatt. Legt sich auf den Boden.',
+            'weight' => 7,
             'rotatable' => false,
         ],
-        'fan' => [
-            'name' => 'Ventilator',
-            'desc' => 'Blaest einen Luftstrom ueber 5 Felder.',
-            'weight' => 5,
-            'rotatable' => true,
-        ],
-        'spike' => [
-            'name' => 'Stacheln',
-            'desc' => 'Toedlich. Zeigen in die gewaehlte Richtung.',
-            'weight' => 8,
-            'rotatable' => true,
-        ],
-        'saw' => [
-            'name' => 'Kreissaege',
-            'desc' => 'Pendelt toedlich hin und her.',
+        'conveyor' => [
+            'name' => 'Förderband',
+            'desc' => 'Schiebt in Pfeilrichtung – am besten genau rückwärts.',
             'weight' => 6,
             'rotatable' => true,
         ],
+        'fan' => [
+            'name' => 'Ventilator',
+            'desc' => 'Bläst über 5 Felder und wirft aus der Bahn.',
+            'weight' => 5,
+            'rotatable' => true,
+        ],
+        'bounce' => [
+            'name' => 'Sprungblock',
+            'desc' => 'Schleudert jeden unkontrolliert davon.',
+            'weight' => 5,
+            'rotatable' => false,
+        ],
+        'spike' => [
+            'name' => 'Stacheln',
+            'desc' => 'Tödlich. Zeigen in die gewählte Richtung.',
+            'weight' => 9,
+            'rotatable' => true,
+        ],
+        'saw' => [
+            'name' => 'Kreissäge',
+            'desc' => 'Pendelt tödlich auf ihrer Schiene hin und her.',
+            'weight' => 6,
+            'rotatable' => true,
+        ],
+        'wrecker' => [
+            'name' => 'Pendel',
+            'desc' => 'Tödliche Kugel an der Kette, schwingt unter dem Anker.',
+            'weight' => 5,
+            'rotatable' => false,
+        ],
         'arrow' => [
             'name' => 'Pfeilfalle',
-            'desc' => 'Schiesst alle 1,7 Sekunden einen Pfeil.',
-            'weight' => 5,
+            'desc' => 'Schießt alle 1,7 Sekunden einen Pfeil.',
+            'weight' => 6,
             'rotatable' => true,
         ],
     ];

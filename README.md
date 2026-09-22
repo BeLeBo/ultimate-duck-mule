@@ -9,6 +9,10 @@ gezeichnet bzw. synthetisiert.
 
 ## Worum geht es?
 
+**Jedes Level ist ohne ein einziges Bauteil zu schaffen.** Alles, was gebaut
+wird, ist ein Hindernis – es gibt bewusst keine Kletterhilfen. Gebaut wird
+also nur, um den anderen den Weg zu verderben.
+
 Jede Runde besteht aus zwei Phasen:
 
 1. **Bauphase** – Der Reihe nach setzt jeder Spieler genau *ein* Bauteil aus seiner
@@ -16,6 +20,9 @@ Jede Runde besteht aus zwei Phasen:
    Runde für Runde gemeiner.
 2. **Partyphase** – Alle starten gleichzeitig und versuchen, die Fahne zu erreichen.
    Wer stirbt, schaut den Rest der Runde zu.
+
+Kommt drei Runden hintereinander niemand an, gilt das Level als zugebaut und
+wird komplett geräumt – so kann sich ein Match nicht festfahren.
 
 ### Punkte
 
@@ -125,19 +132,21 @@ einem normalen Webspace reicht das.
 
 ## Bauteile
 
+Alles hier ist ein Hindernis. Nichts davon bringt jemanden irgendwo hinauf.
+
 | Bauteil | Wirkung |
 | --- | --- |
-| Steinblock | Solide und zuverlässig |
-| Eisblock | Solide, aber spiegelglatt |
-| Sprungblock | Katapultiert alles, was darauf landet |
+| Steinblock | Versperrt den Weg |
+| Eisblock | Versperrt den Weg, und wer oben landet, rutscht weiter |
 | Bruchblock | Bricht 0,45 s nach der Berührung weg |
-| Wolke | Einweg-Plattform, von unten durchspringbar (mit `↓` fällt man durch) |
+| Klebeblock | Bremst auf einen Kriechgang herunter |
+| Ölpfütze | Nicht solide, dafür spiegelglatt – legt sich auf den Boden |
 | Förderband | Schiebt in Pfeilrichtung (drehbar) |
-| Klebeblock | Bremst stark, Wände lassen sich beklettern |
-| Leiter | Zum Hochklettern (Sprungtaste), nicht solide |
-| Ventilator | Luftstrom über 5 Felder (drehbar) |
+| Ventilator | Luftstrom über 5 Felder, wirft aus der Bahn (drehbar) |
+| Sprungblock | Schleudert unkontrolliert davon |
 | Stacheln | Tödlich, zeigen in die gewählte Richtung (drehbar) |
 | Kreissäge | Pendelt tödlich entlang ihrer Schiene (drehbar) |
+| Pendel | Tödliche Kugel an der Kette, schwingt unter ihrem Anker |
 | Pfeilfalle | Schießt alle 1,7 s einen Pfeil (drehbar) |
 
 Jedes gesetzte Bauteil trägt in der Ecke einen kleinen Punkt in der Farbe seines
@@ -147,15 +156,21 @@ Besitzers – wichtig, weil Kills den Bauteil-Besitzer belohnen.
 
 Laufen mit Beschleunigung und Reibung, variable Sprunghöhe (Taste früher loslassen
 = niedriger springen), Coyote-Time und Sprungpuffer für zuverlässige Kantensprünge,
-Wandrutschen und **Wandsprung**, Leitern und kletterbare Klebewände.
+Wandrutschen und **Wandsprung**. Ein Sprung schafft rund 3,3 Kacheln Höhe und aus
+vollem Lauf gut 5 Kacheln Weite – die Level halten überall reichlich Abstand
+darunter.
 
 ## Selbsttest
 
-`tests.php` im Browser öffnen. Die Seite fährt 27 Tests gegen die echte
-Spiel-Engine: Sprunghöhen, jedes Bauteil, jede Todesursache, ein kompletter
-automatischer Durchlauf bis zur Fahne – und sie vergleicht die Bauregeln und den
-Bauteil-Katalog von JavaScript **mit denen von PHP**, damit Server und Client nicht
-auseinanderlaufen.
+`tests.php` im Browser öffnen. Die Seite fährt 33 Tests gegen die echte
+Spiel-Engine: Sprunghöhen, jedes Bauteil, jede Todesursache – und sie vergleicht
+die Bauregeln und den Bauteil-Katalog von JavaScript **mit denen von PHP**, damit
+Server und Client nicht auseinanderlaufen.
+
+Wichtigster Teil: für **jedes Level** sucht der Test erst einen Weg über die
+erreichbaren Standflächen und lässt dann eine echte Figur diesen Weg mit der
+echten Physik ablaufen – ohne ein einziges Bauteil. Geht ein Level nicht mehr
+auf, fällt das sofort auf.
 
 ## Projektstruktur
 
@@ -182,6 +197,9 @@ data/rooms/            Laufzeitdaten der Online-Räume (wird ignoriert von git)
 
 ## Bewusste Abweichungen vom Original
 
+* **Bauteile sind reine Hindernisse.** Im Original hilft man mit seinen Teilen
+  auch sich selbst; hier sind alle Level von vornherein schaffbar, und gebaut
+  wird ausschließlich gegen die anderen.
 * **Gebaut wird der Reihe nach**, nicht gleichzeitig. An einer gemeinsamen Tastatur
   geht es gar nicht anders, und online bleibt die Reihenfolge damit eindeutig.
 * **Figuren kollidieren nicht miteinander** – sie laufen durcheinander hindurch.

@@ -58,6 +58,7 @@
       this.drawBlocks(ctx, level, time);
       this.drawGoal(ctx, level, time);
       this.drawSaws(ctx, level);
+      this.drawWreckers(ctx, level);
       this.drawProjectiles(ctx, level);
       this.drawParticles(ctx, level);
 
@@ -282,16 +283,21 @@
         ctx.stroke();
         ctx.lineWidth = 1;
       },
-      cloud: function (ctx, x, y, cell, time) {
-        var lift = Math.sin(time * 2 + cell.tx * 0.7) * 1.5;
-        ctx.fillStyle = 'rgba(255,255,255,0.95)';
+      oil: function (ctx, x, y, cell, time) {
+        // Liegt flach am Boden der Kachel, schimmert leicht.
+        var base = y + TILE - 9;
+        ctx.fillStyle = 'rgba(18,16,30,0.85)';
         ctx.beginPath();
-        ctx.arc(x + 9, y + 12 + lift, 9, 0, Math.PI * 2);
-        ctx.arc(x + 20, y + 11 + lift, 10, 0, Math.PI * 2);
-        ctx.arc(x + 15, y + 17 + lift, 9, 0, Math.PI * 2);
+        ctx.ellipse(x + TILE / 2, base + 5, TILE / 2 - 1, 5.5, 0, 0, Math.PI * 2);
         ctx.fill();
-        ctx.fillStyle = 'rgba(190,215,240,0.9)';
-        ctx.fillRect(x + 3, y + 17 + lift, TILE - 6, 4);
+        ctx.fillStyle = 'rgba(120,90,180,0.55)';
+        ctx.beginPath();
+        ctx.ellipse(x + 11 + Math.sin(time * 1.6 + cell.tx) * 2, base + 3.5, 5, 2.2, 0, 0, Math.PI * 2);
+        ctx.fill();
+        ctx.fillStyle = 'rgba(90,190,200,0.4)';
+        ctx.beginPath();
+        ctx.ellipse(x + 21, base + 6, 4, 1.8, 0, 0, Math.PI * 2);
+        ctx.fill();
       },
       conveyor: function (ctx, x, y, cell, time) {
         var dir = cell.rot === 3 ? -1 : 1;
@@ -333,14 +339,17 @@
           ctx.fill();
         }
       },
-      ladder: function (ctx, x, y) {
-        ctx.fillStyle = '#c08d4f';
-        ctx.fillRect(x + 4, y, 4, TILE);
-        ctx.fillRect(x + TILE - 8, y, 4, TILE);
-        ctx.fillStyle = '#e0ae6c';
-        for (var i = 0; i < 3; i++) {
-          ctx.fillRect(x + 4, y + 4 + i * 11, TILE - 8, 3);
-        }
+      wrecker: function (ctx, x, y) {
+        // Nur der Anker - Kette und Kugel zeichnet drawWreckers().
+        ctx.fillStyle = '#4a4f5e';
+        roundRect(ctx, x + 5, y + 4, TILE - 10, TILE - 12, 4);
+        ctx.fill();
+        ctx.fillStyle = '#767d90';
+        ctx.fillRect(x + 8, y + 7, TILE - 16, 4);
+        ctx.fillStyle = '#2c303c';
+        ctx.beginPath();
+        ctx.arc(x + TILE / 2, y + TILE - 8, 4, 0, Math.PI * 2);
+        ctx.fill();
       },
       fan: function (ctx, x, y, cell, time) {
         ctx.save();
@@ -486,6 +495,52 @@
         ctx.arc(0, 0, 5, 0, Math.PI * 2);
         ctx.fill();
         ctx.restore();
+      }
+      ctx.lineWidth = 1;
+    },
+
+    drawWreckers: function (ctx, level) {
+      for (var i = 0; i < level.wreckers.length; i++) {
+        var w = level.wreckers[i];
+
+        // Kette
+        ctx.strokeStyle = '#8b92a5';
+        ctx.lineWidth = 3;
+        ctx.beginPath();
+        ctx.moveTo(w.ax, w.ay);
+        ctx.lineTo(w.x, w.y);
+        ctx.stroke();
+        ctx.strokeStyle = 'rgba(0,0,0,0.25)';
+        ctx.lineWidth = 1;
+        ctx.beginPath();
+        ctx.moveTo(w.ax, w.ay);
+        ctx.lineTo(w.x, w.y);
+        ctx.stroke();
+
+        // Kugel mit Glanzpunkt
+        var ball = ctx.createRadialGradient(w.x - 4, w.y - 5, 2, w.x, w.y, w.radius + 2);
+        ball.addColorStop(0, '#aeb6c8');
+        ball.addColorStop(1, '#4b5162');
+        ctx.fillStyle = ball;
+        ctx.beginPath();
+        ctx.arc(w.x, w.y, w.radius, 0, Math.PI * 2);
+        ctx.fill();
+        ctx.strokeStyle = 'rgba(20,22,32,0.5)';
+        ctx.beginPath();
+        ctx.arc(w.x, w.y, w.radius, 0, Math.PI * 2);
+        ctx.stroke();
+
+        // Spitzen, damit sie klar als Gefahr lesbar ist
+        ctx.fillStyle = '#d9dee8';
+        for (var t = 0; t < 6; t++) {
+          var a = (t / 6) * Math.PI * 2 + w.angle;
+          ctx.beginPath();
+          ctx.moveTo(w.x + Math.cos(a - 0.22) * w.radius, w.y + Math.sin(a - 0.22) * w.radius);
+          ctx.lineTo(w.x + Math.cos(a) * (w.radius + 5), w.y + Math.sin(a) * (w.radius + 5));
+          ctx.lineTo(w.x + Math.cos(a + 0.22) * w.radius, w.y + Math.sin(a + 0.22) * w.radius);
+          ctx.closePath();
+          ctx.fill();
+        }
       }
       ctx.lineWidth = 1;
     },

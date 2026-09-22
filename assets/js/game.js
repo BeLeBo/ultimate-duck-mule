@@ -443,6 +443,19 @@
 
     finishRoundLocal: function () {
       this.lastRound = this.scoreRound(this.players);
+
+      // Drei Runden ohne Zieleinlauf: das Level ist zugebaut, alles raeumen.
+      if (this.lastRound.anyFinisher) {
+        this.deadRounds = 0;
+      } else {
+        this.deadRounds = (this.deadRounds || 0) + 1;
+        if (this.deadRounds >= 3) {
+          this.deadRounds = 0;
+          this.level.rebuild([]);
+          this.lastRound.cleared = true;
+        }
+      }
+
       var leader = this.players.slice().sort(function (a, b) { return b.score - a.score; });
       var champion = null;
       if (leader[0].score >= this.targetScore && (leader.length < 2 || leader[0].score > leader[1].score)) {
@@ -860,6 +873,7 @@
       this.showOverlay(
         '<h2>Runde ' + data.round + '</h2>' +
         (data.anyFinisher ? '' : '<p class="muted">Niemand hat das Ziel erreicht – keine Punkte.</p>') +
+        (data.cleared ? '<p class="cleared">Drei Runden ohne Zieleinlauf – das Level wird komplett geräumt.</p>' : '') +
         '<table class="scoretable"><tbody>' + rows + '</tbody></table>' +
         '<button class="big" data-action="next">Weiter</button>' + waiting,
         'score'
@@ -899,11 +913,14 @@
       this.showOverlay(
         '<h2>So läuft es</h2>' +
         '<ol class="rules">' +
-        '<li><b>Bauphase:</b> Jeder setzt der Reihe nach ein Bauteil ins Level.</li>' +
+        '<li><b>Jedes Level ist ohne ein einziges Bauteil zu schaffen.</b> ' +
+        'Alles, was gebaut wird, ist ein Hindernis \u2013 keine Hilfe.</li>' +
+        '<li><b>Bauphase:</b> Jeder setzt der Reihe nach ein Bauteil ins Level. Es bleibt das ganze Match liegen.</li>' +
         '<li><b>Partyphase:</b> Alle rennen gleichzeitig los und versuchen, die Fahne zu erreichen.</li>' +
         '<li><b>Punkte:</b> Ziel erreicht <b>+1</b>, einziger im Ziel <b>+2</b> extra, ' +
         'ein Gegner stirbt an deinem Bauteil <b>+1</b>, du stirbst an deinem eigenen <b>-1</b>.</li>' +
         '<li>Wer zuerst <b>' + this.targetScore + ' Punkte</b> hat und allein vorn liegt, gewinnt.</li>' +
+        '<li>Kommt <b>drei Runden lang niemand</b> ins Ziel, wird das Level komplett ger\u00e4umt.</li>' +
         '</ol>' +
         '<h3>Bauteile</h3><ul class="cardlist">' + list + '</ul>' +
         '<button class="big" data-action="close">Alles klar</button>',
@@ -967,6 +984,7 @@
         } else {
           for (var i = 0; i < this.players.length; i++) { this.players[i].score = 0; }
           this.level.rebuild([]);
+          this.deadRounds = 0;
           this.round = 0;
           this.winner = null;
           this.lastRound = null;

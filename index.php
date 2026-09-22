@@ -172,13 +172,15 @@ $characters = Game::CHARACTERS;
   <section class="panel hidden" id="tab-rules">
     <h2>Regeln</h2>
     <ol class="rules">
+      <li><strong>Jedes Level ist ohne ein einziges Bauteil zu schaffen.</strong> Alles, was gebaut wird, ist ein Hindernis &ndash; es gibt keine Kletterhilfen.</li>
       <li><strong>Bauphase:</strong> Der Reihe nach setzt jeder genau ein Bauteil aus seiner Hand ins Level. Die Bauteile bleiben das ganze Match liegen.</li>
       <li><strong>Partyphase:</strong> Alle starten gleichzeitig und versuchen, die Fahne zu erreichen. Wer stirbt, schaut den Rest der Runde zu.</li>
       <li><strong>Punkte:</strong> Ziel erreicht <b>+1</b> &middot; einziger im Ziel <b>+2</b> extra &middot;
         ein Gegner stirbt an deinem Bauteil <b>+1</b> &middot; du stirbst an deinem eigenen Bauteil <b>-1</b>.
         Unter 0 geht es nicht.</li>
       <li><strong>Sieg:</strong> Wer nach einer Runde die Zielpunktzahl erreicht hat und allein vorne liegt, gewinnt.</li>
-      <li><strong>Bewegung:</strong> Laufen, springen, an Waenden abspringen (Wandsprung), Leitern und Klebebloecke beklettern.</li>
+      <li><strong>Bewegung:</strong> Laufen, springen, an W&auml;nden abrutschen und abspringen (Wandsprung).</li>
+      <li>Kommt <strong>drei Runden lang niemand</strong> ins Ziel, ist das Level zugebaut und wird ger&auml;umt.</li>
     </ol>
 
     <h3>Bauteile</h3>

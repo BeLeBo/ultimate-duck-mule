@@ -28,8 +28,6 @@
     this.face = 1;
     this.onGround = false;
     this.wallDir = 0;
-    this.onLadder = false;
-    this.clinging = false;
     this.coyote = 0;
     this.buffer = 0;
     this.wallLock = 0;
@@ -63,8 +61,7 @@
       friction: 1,
       accel: 1,
       sticky: false,
-      climb: false,
-      climbWall: false,
+      slick: false,
       conveyor: 0,
       groundCell: null
     };
@@ -78,18 +75,10 @@
       for (var ty = y0; ty <= y1; ty++) {
         var cell = level.cell(tx, ty);
         if (!cell || cell.broken) { continue; }
-        if (cell.spec.climb) { env.climb = true; }
         if (cell.spec.sticky) { env.sticky = true; }
+        // Oelpfuetzen sind nicht solide, wirken aber auf alles, was sie beruehrt.
+        if (cell.spec.slick) { env.slick = true; }
       }
-    }
-
-    // Seitlich anliegender Klebeblock -> festhalten moeglich.
-    var midY = Math.floor(this.centerY() / TILE);
-    var leftCell = level.cell(Math.floor((this.x - 2) / TILE), midY);
-    var rightCell = level.cell(Math.floor((this.x + this.w + 2) / TILE), midY);
-    if ((leftCell && leftCell.spec.climbWall && !leftCell.broken) ||
-        (rightCell && rightCell.spec.climbWall && !rightCell.broken)) {
-      env.climbWall = true;
     }
 
     // Boden unter den Fuessen.
@@ -111,6 +100,11 @@
       }
     }
 
+    if (env.slick) {
+      env.friction = Math.min(env.friction, 0.05);
+      env.accel = Math.min(env.accel, 0.3);
+    }
+
     return env;
   };
 
@@ -126,7 +120,7 @@
       this.animTime += dt;
       this.confetti = Math.max(0, this.confetti - dt);
       this.vx = UDM.approach(this.vx, 0, 900 * dt);
-      this.applyGravity(dt, { friction: 1, accel: 1, sticky: false, climb: false, climbWall: false, conveyor: 0 });
+      this.applyGravity(dt);
       this.moveY(this.vy * dt, level);
       this.moveX(this.vx * dt, level);
       return;
@@ -135,7 +129,6 @@
     this.time += dt;
     this.animTime += dt;
     var env = this.sampleEnv(level);
-    this.onLadder = env.climb;
 
     var dir = (input.right ? 1 : 0) - (input.left ? 1 : 0);
 
@@ -159,20 +152,14 @@
       }
     }
 
-    // An der Wand haengen.
-    this.clinging = false;
-    if (!this.onGround && this.wallDir !== 0 && dir === this.wallDir) {
-      if (env.climbWall) {
-        this.clinging = true;
-      } else if (this.vy > 0) {
-        this.vy = Math.min(this.vy, P.wallSlideMax);
-      }
+    // An der Wand abrutschen (bleibt als Bewegungskoennen erhalten).
+    if (!this.onGround && this.wallDir !== 0 && dir === this.wallDir && this.vy > 0) {
+      this.vy = Math.min(this.vy, P.wallSlideMax);
     }
 
     this.handleJump(input, env, level);
     this.applyJumpCut(input);
     this.applyGravity(dt, env);
-    this.applyClimb(dt, input, env);
     this.applyStreams(dt, level);
 
     if (input.down && this.onGround && this.isOnOneWay(level)) {
@@ -191,9 +178,6 @@
   Player.prototype.handleJump = function (input, env, level) {
     if (this.buffer <= 0) { return; }
 
-    if (env.climb) {
-      return; // Auf der Leiter klettert die Sprungtaste statt zu springen.
-    }
     if (this.coyote > 0) {
       this.vy = P.jumpVel;
       this.onGround = false;
@@ -230,24 +214,7 @@
   };
 
   Player.prototype.applyGravity = function (dt, env) {
-    if (env.climb) {
-      this.vy = 0;
-      return;
-    }
-    if (this.clinging) {
-      this.vy = Math.min(this.vy, 28);
-      return;
-    }
     this.vy = Math.min(this.vy + P.gravity * dt, P.maxFall);
-  };
-
-  /** Leitern und Klebewaende: hoch mit Sprungtaste, runter mit Abwaertstaste. */
-  Player.prototype.applyClimb = function (dt, input, env) {
-    if (env.climb) {
-      if (input.jump) { this.vy = P.climbUp; } else if (input.down) { this.vy = P.climbDown; } else { this.vy = 0; }
-    } else if (this.clinging && input.jump) {
-      this.vy = P.climbUp * 0.6;
-    }
   };
 
   Player.prototype.applyStreams = function (dt, level) {
@@ -375,9 +342,8 @@
   Player.prototype.updateAnim = function (dir) {
     if (!this.alive) { this.anim = 'dead'; return; }
     if (this.finished) { this.anim = 'done'; return; }
-    if (this.onLadder) { this.anim = 'wall'; return; }
     if (!this.onGround) {
-      if (this.clinging || (this.wallDir !== 0 && this.vy > 0)) { this.anim = 'wall'; }
+      if (this.wallDir !== 0 && this.vy > 0) { this.anim = 'wall'; }
       else { this.anim = this.vy < 0 ? 'jump' : 'fall'; }
       return;
     }
@@ -411,6 +377,13 @@
       var saw = level.saws[i];
       if (this.circleHit(saw.x, saw.y, saw.radius)) {
         return this.kill('saege', saw.ownerSlot, level);
+      }
+    }
+
+    for (i = 0; i < level.wreckers.length; i++) {
+      var wrecker = level.wreckers[i];
+      if (this.circleHit(wrecker.x, wrecker.y, wrecker.radius)) {
+        return this.kill('pendel', wrecker.ownerSlot, level);
       }
     }
 

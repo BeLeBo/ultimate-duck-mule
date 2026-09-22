@@ -16,69 +16,91 @@ final class Levels
     public const COLS = 40;
     public const ROWS = 23;
 
-    /** @return list<array<string, mixed>> */
+    /**
+     * Alle Level sind so gebaut, dass man sie **ohne ein einziges Bauteil**
+     * schaffen kann: Luecken hoechstens 3 Kacheln breit, Stufen hoechstens
+     * 2 Kacheln hoch. Gebaute Teile sind reine Hindernisse.
+     *
+     * Zum Rechnen: ein Sprung schafft rund 3,3 Kacheln Hoehe und aus vollem
+     * Lauf etwa 5 Kacheln Weite. tests.php faehrt jedes Level mit einem
+     * automatischen Laeufer ab und prueft genau das nach.
+     *
+     * @return list<array<string, mixed>>
+     */
     public static function all(): array
     {
         return [
             [
+                // Flacher Einstieg: immer nach rechts, drei kurze Luecken.
                 'id' => 'wiese',
                 'name' => 'Wiesenweg',
                 'theme' => 'day',
                 'spawn' => ['x' => 3, 'y' => 17],
-                'goal' => ['x' => 35, 'y' => 17],
+                'goal' => ['x' => 36, 'y' => 17],
                 'rects' => [
-                    ['x' => 0, 'y' => 18, 'w' => 8, 'h' => 5, 't' => 'ground'],
-                    ['x' => 15, 'y' => 16, 'w' => 4, 'h' => 7, 't' => 'ground'],
-                    ['x' => 24, 'y' => 13, 'w' => 4, 'h' => 1, 't' => 'oneway'],
-                    ['x' => 32, 'y' => 18, 'w' => 8, 'h' => 5, 't' => 'ground'],
-                    ['x' => 38, 'y' => 12, 'w' => 2, 'h' => 6, 't' => 'rock'],
+                    ['x' => 0, 'y' => 18, 'w' => 10, 'h' => 5, 't' => 'ground'],
+                    ['x' => 13, 'y' => 18, 'w' => 6, 'h' => 5, 't' => 'ground'],
+                    ['x' => 19, 'y' => 16, 'w' => 6, 'h' => 7, 't' => 'ground'],
+                    ['x' => 28, 'y' => 16, 'w' => 4, 'h' => 7, 't' => 'ground'],
+                    ['x' => 34, 'y' => 18, 'w' => 6, 'h' => 5, 't' => 'ground'],
+                    ['x' => 22, 'y' => 11, 'w' => 5, 'h' => 1, 't' => 'oneway'],
                 ],
             ],
             [
+                // Treppe nach oben rechts. Jede Stufe steht auf dem Boden, so
+                // hat niemand eine Decke ueber dem Kopf - und wer in eine
+                // Luecke faellt, kommt aus ihr auch wieder heraus.
                 'id' => 'turm',
                 'name' => 'Turmklettern',
                 'theme' => 'dusk',
                 'spawn' => ['x' => 2, 'y' => 20],
-                'goal' => ['x' => 32, 'y' => 4],
+                'goal' => ['x' => 37, 'y' => 8],
                 'rects' => [
                     ['x' => 0, 'y' => 21, 'w' => 40, 'h' => 2, 't' => 'ground'],
-                    ['x' => 9, 'y' => 17, 'w' => 5, 'h' => 1, 't' => 'ground'],
-                    ['x' => 2, 'y' => 13, 'w' => 5, 'h' => 1, 't' => 'ground'],
-                    ['x' => 12, 'y' => 9, 'w' => 6, 'h' => 1, 't' => 'ground'],
-                    ['x' => 36, 'y' => 6, 'w' => 4, 'h' => 15, 't' => 'rock'],
-                    ['x' => 29, 'y' => 5, 'w' => 7, 'h' => 1, 't' => 'ground'],
-                    ['x' => 22, 'y' => 12, 'w' => 3, 'h' => 1, 't' => 'oneway'],
+                    ['x' => 5, 'y' => 19, 'w' => 4, 'h' => 2, 't' => 'ground'],
+                    ['x' => 11, 'y' => 17, 'w' => 4, 'h' => 4, 't' => 'ground'],
+                    ['x' => 17, 'y' => 15, 'w' => 4, 'h' => 6, 't' => 'ground'],
+                    ['x' => 24, 'y' => 13, 'w' => 4, 'h' => 8, 't' => 'ground'],
+                    ['x' => 30, 'y' => 11, 'w' => 4, 'h' => 10, 't' => 'ground'],
+                    ['x' => 35, 'y' => 9, 'w' => 5, 'h' => 12, 't' => 'rock'],
+                    ['x' => 13, 'y' => 7, 'w' => 5, 'h' => 1, 't' => 'oneway'],
                 ],
             ],
             [
+                // Trittsteine ueber dem Abgrund - jede Luecke 2 Kacheln.
                 'id' => 'kluft',
                 'name' => 'Die Kluft',
                 'theme' => 'night',
                 'spawn' => ['x' => 3, 'y' => 13],
-                'goal' => ['x' => 35, 'y' => 13],
+                'goal' => ['x' => 34, 'y' => 13],
                 'rects' => [
-                    ['x' => 0, 'y' => 14, 'w' => 10, 'h' => 9, 't' => 'rock'],
-                    ['x' => 30, 'y' => 14, 'w' => 10, 'h' => 9, 't' => 'rock'],
-                    ['x' => 18, 'y' => 10, 'w' => 4, 'h' => 1, 't' => 'ground'],
-                    ['x' => 8, 'y' => 6, 'w' => 4, 'h' => 1, 't' => 'oneway'],
-                    ['x' => 27, 'y' => 6, 'w' => 4, 'h' => 1, 't' => 'oneway'],
-                    ['x' => 0, 'y' => 7, 'w' => 2, 'h' => 7, 't' => 'rock'],
-                    ['x' => 38, 'y' => 7, 'w' => 2, 'h' => 7, 't' => 'rock'],
+                    ['x' => 0, 'y' => 14, 'w' => 7, 'h' => 9, 't' => 'rock'],
+                    ['x' => 9, 'y' => 14, 'w' => 3, 'h' => 1, 't' => 'ground'],
+                    ['x' => 14, 'y' => 12, 'w' => 3, 'h' => 1, 't' => 'ground'],
+                    ['x' => 19, 'y' => 12, 'w' => 3, 'h' => 1, 't' => 'ground'],
+                    ['x' => 24, 'y' => 14, 'w' => 3, 'h' => 1, 't' => 'ground'],
+                    ['x' => 29, 'y' => 14, 'w' => 11, 'h' => 9, 't' => 'rock'],
+                    ['x' => 16, 'y' => 7, 'w' => 4, 'h' => 1, 't' => 'oneway'],
+                    ['x' => 0, 'y' => 8, 'w' => 2, 'h' => 6, 't' => 'rock'],
+                    ['x' => 38, 'y' => 8, 'w' => 2, 'h' => 6, 't' => 'rock'],
                 ],
             ],
             [
+                // Enger Gang unter dem Oberdeck, dann eine Treppe hinauf.
                 'id' => 'doppeldecker',
                 'name' => 'Doppeldecker',
                 'theme' => 'sunset',
                 'spawn' => ['x' => 3, 'y' => 20],
-                'goal' => ['x' => 35, 'y' => 11],
+                'goal' => ['x' => 34, 'y' => 12],
                 'rects' => [
                     ['x' => 0, 'y' => 21, 'w' => 40, 'h' => 2, 't' => 'ground'],
-                    ['x' => 0, 'y' => 13, 'w' => 14, 'h' => 2, 't' => 'ground'],
-                    ['x' => 26, 'y' => 13, 'w' => 14, 'h' => 2, 't' => 'ground'],
-                    ['x' => 0, 'y' => 15, 'w' => 2, 'h' => 6, 't' => 'rock'],
+                    ['x' => 0, 'y' => 14, 'w' => 12, 'h' => 2, 't' => 'ground'],
+                    ['x' => 15, 'y' => 19, 'w' => 3, 'h' => 1, 't' => 'ground'],
+                    ['x' => 19, 'y' => 17, 'w' => 3, 'h' => 1, 't' => 'ground'],
+                    ['x' => 23, 'y' => 15, 'w' => 3, 'h' => 1, 't' => 'ground'],
+                    ['x' => 28, 'y' => 13, 'w' => 12, 'h' => 2, 't' => 'ground'],
+                    ['x' => 0, 'y' => 16, 'w' => 2, 'h' => 5, 't' => 'rock'],
                     ['x' => 38, 'y' => 15, 'w' => 2, 'h' => 6, 't' => 'rock'],
-                    ['x' => 19, 'y' => 17, 'w' => 3, 'h' => 1, 't' => 'oneway'],
                 ],
             ],
         ];

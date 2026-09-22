@@ -29,6 +29,13 @@ final class Game
     /** Nach dieser Zeit wird ein untaetiger Baumeister uebersprungen (Sek.). */
     public const BUILD_TIMEOUT = 120;
 
+    /**
+     * So viele Runden ohne einen einzigen Zieleinlauf, dann wird das Level
+     * geraeumt. Bauteile sind reine Hindernisse und bleiben liegen - ohne
+     * dieses Ventil koennte ein Match in einem zugebauten Level feststecken.
+     */
+    public const DEAD_ROUND_LIMIT = 3;
+
     /** @var list<string> */
     public const CHARACTERS = ['duck', 'mule', 'racoon'];
 
@@ -50,6 +57,7 @@ final class Game
             'firstBuilder' => 0,
             'nextBlockId' => 1,
             'blocks' => [],
+            'deadRounds' => 0,
             'players' => [],
             'phaseStarted' => time(),
             'lastRound' => null,
@@ -141,6 +149,7 @@ final class Game
         $room['blocks'] = [];
         $room['nextBlockId'] = 1;
         $room['round'] = 0;
+        $room['deadRounds'] = 0;
         $room['winner'] = null;
         $room['lastRound'] = null;
         self::beginRound($room);
@@ -409,10 +418,25 @@ final class Game
             unset($player);
         }
 
+        // Kommt drei Runden lang niemand an, ist das Level zugebaut.
+        $cleared = false;
+        if (count($finishers) === 0) {
+            $room['deadRounds'] = (int) ($room['deadRounds'] ?? 0) + 1;
+            if ($room['deadRounds'] >= self::DEAD_ROUND_LIMIT) {
+                $room['blocks'] = [];
+                $room['deadRounds'] = 0;
+                $cleared = true;
+                self::log($room, 'Drei Runden ohne Zieleinlauf - das Level wird geraeumt.');
+            }
+        } else {
+            $room['deadRounds'] = 0;
+        }
+
         $room['lastRound'] = [
             'round' => $room['round'],
             'entries' => $entries,
             'anyFinisher' => count($finishers) > 0,
+            'cleared' => $cleared,
         ];
 
         $room['phase'] = 'score';
@@ -739,7 +763,7 @@ final class Game
 
     private static function cleanCause(string $cause): string
     {
-        $allowed = ['ziel', 'sturz', 'stachel', 'saege', 'pfeil', 'zeit', 'verbindung', 'quetsch', ''];
+        $allowed = ['ziel', 'sturz', 'stachel', 'saege', 'pendel', 'pfeil', 'zeit', 'verbindung', ''];
 
         return in_array($cause, $allowed, true) ? $cause : '';
     }

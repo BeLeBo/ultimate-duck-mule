@@ -436,3 +436,12 @@ label { display: block; font-size: 13px; color: var(--muted); margin-bottom: 5px
   .pscore { font-size: 18px; }
   #app { padding: 6px; }
 }
+
+.cleared {
+  margin: 0 0 14px;
+  padding: 9px 14px;
+  border-radius: 10px;
+  background: rgba(63, 199, 240, 0.12);
+  border: 1px solid rgba(63, 199, 240, 0.35);
+  font-size: 14px;
+}

@@ -264,17 +264,6 @@ foreach (Levels::all() as $level) {
       'Hub = ' + ((16 * TILE - UDM.PHYS.playerH) - run.minY).toFixed(0) + 'px');
   }());
 
-  (function testLadder() {
-    var level = makeLevel(FLAT, [
-      block('ladder', 10, 17), block('ladder', 10, 16), block('ladder', 10, 15), block('ladder', 10, 14)
-    ]);
-    var p = makePlayer(10, 17);
-    var start = p.y;
-    simulate(p, level, 1.2, keys({ jump: true }), { keepGoing: true });
-    check('Leiter lässt die Figur nach oben klettern',
-      start - p.y > 100, 'Kletterhöhe = ' + (start - p.y).toFixed(0) + 'px');
-  }());
-
   (function testHoney() {
     var blocks = [];
     for (var x = 8; x < 22; x++) { blocks.push(block('honey', x, 17)); }
@@ -293,26 +282,88 @@ foreach (Levels::all() as $level) {
       'Klebe=' + stickyDist.toFixed(0) + 'px, normal=' + (fast.x - fx).toFixed(0) + 'px');
   }());
 
-  (function testCloud() {
-    var level = makeLevel(FLAT, [block('cloud', 10, 16)]);
+  (function testOil() {
+    // Oelpfuetze ist nicht solide, macht den Boden darunter aber spiegelglatt.
+    var blocks = [];
+    for (var x = 8; x < 22; x++) { blocks.push(block('oil', x, 17)); }
+    var level = makeLevel(FLAT, blocks);
+    var p = makePlayer(9, 17);
+    simulate(p, level, 1.2, keys({ right: true }), { keepGoing: true });
+    var x0 = p.x;
+    simulate(p, level, 1.5, NONE, { keepGoing: true });
+    var slide = p.x - x0;
+
+    var dry = makeLevel(FLAT);
+    var q = makePlayer(9, 17);
+    simulate(q, dry, 1.2, keys({ right: true }), { keepGoing: true });
+    var qx = q.x;
+    simulate(q, dry, 1.5, NONE, { keepGoing: true });
+
+    check('Ölpfütze lässt die Figur weiterrutschen',
+      slide > (q.x - qx) + 50 && p.alive,
+      'Öl=' + slide.toFixed(0) + 'px, trocken=' + (q.x - qx).toFixed(0) + 'px');
+  }());
+
+  (function testOilNotSolid() {
+    // Auf einer Pfuetze kann man nicht stehen - sie ist keine Plattform.
+    var level = makeLevel(FLAT, [block('oil', 10, 14)]);
+    var p = makePlayer(10, 12);
+    simulate(p, level, 2, NONE, { keepGoing: true });
+    check('Ölpfütze trägt nicht - man fällt hindurch',
+      Math.abs(p.y - (18 * TILE - UDM.PHYS.playerH)) < 2,
+      'y=' + p.y.toFixed(0));
+  }());
+
+  (function testWrecker() {
+    var level = makeLevel(FLAT, [block('wrecker', 10, 14, 0, 2)]);
+    var p = makePlayer(10, 17);
+    simulate(p, level, 3, NONE);
+    check('Pendel tötet und wird dem Besitzer zugeordnet',
+      !p.alive && p.cause === 'pendel' && p.killerSlot === 2,
+      'cause=' + p.cause + ', killerSlot=' + p.killerSlot);
+  }());
+
+  (function testWreckerSwings() {
+    var level = makeLevel(FLAT, [block('wrecker', 10, 12, 0, 1)]);
+    var w = level.wreckers[0];
+    level.update(1 / 120, 0);
+    var x0 = w.x;
+    level.update(1 / 120, w.period / 4);
+    check('Pendel schwingt an seiner Kette',
+      level.wreckers.length === 1 && w.length >= TILE && Math.abs(w.x - x0) > 15,
+      'Kette=' + w.length + 'px, Ausschlag=' + (w.x - x0).toFixed(0) + 'px');
+  }());
+
+  (function testNoClimbingHelpers() {
+    // Kein Bauteil darf eine Aufstiegshilfe sein.
+    var helpers = [];
+    Object.keys(UDM.BLOCKS).forEach(function (id) {
+      var spec = UDM.BLOCKS[id];
+      if (spec.climb || spec.climbWall || spec.oneWay) { helpers.push(id); }
+    });
+    check('Kein Bauteil ist eine Kletterhilfe',
+      helpers.length === 0,
+      helpers.length ? helpers.join(', ') : Object.keys(UDM.BLOCKS).length + ' Bauteile geprüft');
+  }());
+
+  (function testOneWayTerrain() {
+    // Einweg-Plattformen gibt es weiterhin als Gelaende, nur nicht als Bauteil.
+    var def = {
+      id: 'test-oneway', name: 'Test', theme: 'day',
+      spawn: { x: 2, y: 17 }, goal: { x: 35, y: 17 },
+      rects: [
+        { x: 0, y: 18, w: 40, h: 5, t: 'ground' },
+        { x: 9, y: 15, w: 4, h: 1, t: 'oneway' }
+      ]
+    };
+    var level = makeLevel(def);
     var p = makePlayer(10, 17);
     simulate(p, level, 1.6, function (t) {
       return keys({ jump: t < 0.6, jumpPressed: t < 1 / 60 });
     }, { keepGoing: true });
-    var onCloud = 16 * TILE - UDM.PHYS.playerH;
-    check('Wolke ist von unten durchspringbar und trägt von oben',
-      Math.abs(p.y - onCloud) < 2 && p.onGround,
-      'y=' + p.y.toFixed(1) + ' erwartet ' + onCloud);
-  }());
-
-  (function testCloudDropThrough() {
-    var level = makeLevel(FLAT, [block('cloud', 10, 16)]);
-    var p = makePlayer(10, 15);
-    simulate(p, level, 0.6, NONE, { keepGoing: true });
-    var landed = Math.abs(p.y - (16 * TILE - UDM.PHYS.playerH)) < 2;
-    simulate(p, level, 1.2, keys({ down: true }), { keepGoing: true });
-    check('Mit der Abwärtstaste fällt man durch die Wolke',
-      landed && p.y > 17 * TILE, 'gelandet=' + landed + ', y=' + p.y.toFixed(0));
+    check('Einweg-Gelände ist von unten durchspringbar',
+      Math.abs(p.y - (15 * TILE - UDM.PHYS.playerH)) < 2 && p.onGround,
+      'y=' + p.y.toFixed(1) + ' erwartet ' + (15 * TILE - UDM.PHYS.playerH));
   }());
 
   (function testCrumble() {
@@ -379,35 +430,181 @@ foreach (Levels::all() as $level) {
     check('Pfeile bleiben an einer Wand hängen', p.alive, 'alive=' + p.alive);
   }());
 
-  /* ------------------------------------------------- Kompletter Durchlauf */
+  /* ------------------------------------ Level ohne Bauteile schaffbar */
 
-  (function testWalkthrough() {
-    // Auf "Wiesenweg" eine Steinbruecke ueber beide Abgruende bauen und die
-    // Figur automatisch durchlaufen lassen: laufen, springen, ins Ziel.
-    var def = null;
-    <?= 'var allLevels = ' . json_encode(Levels::all()) . ';' ?>
-    allLevels.forEach(function (candidate) { if (candidate.id === 'wiese') { def = candidate; } });
-    if (!def) { check('Testlevel "Wiesenweg" vorhanden', false, 'nicht gefunden'); return; }
+  /**
+   * Alle Kacheln, auf denen die Figur stehen kann: fester Boden darunter,
+   * zwei Kacheln Kopffreiheit darueber.
+   */
+  function standingTiles(level) {
+    var nodes = {};
+    for (var tx = 0; tx < level.cols; tx++) {
+      for (var ty = 1; ty < level.rows; ty++) {
+        var support = level.isSolid(tx, ty + 1) || level.isOneWay(tx, ty + 1);
+        if (!support) { continue; }
+        if (level.isSolid(tx, ty) || level.isSolid(tx, ty - 1)) { continue; }
+        nodes[tx + ',' + ty] = { tx: tx, ty: ty };
+      }
+    }
+    return nodes;
+  }
 
-    var bridge = [];
-    var x;
-    for (x = 8; x <= 14; x++) { bridge.push(block('stone', x, 18, 0, 0)); }
-    for (x = 19; x <= 31; x++) { bridge.push(block('stone', x, 18, 0, 0)); }
+  /**
+   * Kommt man von a nach b? Bewusst knapper angesetzt als die Figur wirklich
+   * kann (3,3 Kacheln hoch, 5,2 weit), damit der Weg auch mit Gegenwind haelt.
+   */
+  function reachable(a, b) {
+    var dx = Math.abs(b.tx - a.tx);
+    var up = a.ty - b.ty;
+    if (up > 0) { return up <= 3 && dx <= 4 && dx > 0; }
+    if (up === 0) { return dx >= 1 && dx <= 4; }
+    return dx <= 5;
+  }
 
-    var level = makeLevel(def, bridge);
+  /** Breitensuche vom Start zum Ziel ueber die Standflaechen. */
+  function findPath(level) {
+    var nodes = standingTiles(level);
+    var startKey = level.def.spawn.x + ',' + level.def.spawn.y;
+    var goalKey = level.def.goal.x + ',' + level.def.goal.y;
+    if (!nodes[startKey] || !nodes[goalKey]) {
+      return { error: (!nodes[startKey] ? 'Startkachel' : 'Zielkachel') + ' ist keine Standfläche' };
+    }
+
+    var list = Object.keys(nodes).map(function (key) { return nodes[key]; });
+    var queue = [nodes[startKey]];
+    var from = {};
+    from[startKey] = null;
+
+    while (queue.length) {
+      var current = queue.shift();
+      var currentKey = current.tx + ',' + current.ty;
+      if (currentKey === goalKey) {
+        var path = [];
+        var key = goalKey;
+        while (key) {
+          var parts = key.split(',');
+          path.unshift({ tx: parseInt(parts[0], 10), ty: parseInt(parts[1], 10) });
+          key = from[key];
+        }
+        return { path: path };
+      }
+      for (var i = 0; i < list.length; i++) {
+        var next = list[i];
+        var nextKey = next.tx + ',' + next.ty;
+        if (from.hasOwnProperty(nextKey) || !reachable(current, next)) { continue; }
+        from[nextKey] = currentKey;
+        queue.push(next);
+      }
+    }
+    return { error: 'kein Weg vom Start zum Ziel gefunden' };
+  }
+
+  /**
+   * Laesst eine echte Figur den gefundenen Weg mit der echten Physik
+   * ablaufen: nach rechts/links zum naechsten Wegpunkt, springen, wenn er
+   * hoeher liegt oder eine Luecke dazwischen ist.
+   */
+  function runPath(level, path, seconds) {
     var p = new UDM.Player(0, { name: 'Bot', char: 'duck' });
     var spawn = level.spawnPoint(0);
     p.reset(spawn.x, spawn.y);
 
-    var run = simulate(p, level, 20, function (t) {
-      // Dauerhaft nach rechts, regelmäßig springen.
-      return keys({ right: true, jump: (t % 0.5) < 0.22, jumpPressed: (t % 0.5) < 1 / 90 });
-    });
+    var dt = 1 / 120;
+    var steps = Math.round(seconds / dt);
+    var index = 0;
+    var jumpTimer = 0;
+    var jumpStart = false;
+    var stuck = 0;
+    var lastProgress = 0;
+    var t = 0;
 
-    check('Mit gebauter Brücke erreicht eine Figur das Ziel',
-      p.finished,
-      'finished=' + p.finished + ', x=' + p.x.toFixed(0) + ', Zeit=' + run.time.toFixed(1) + 's' +
-      (p.alive ? '' : ', gestorben an: ' + p.cause));
+    for (var i = 0; i < steps; i++) {
+      var feetRow = Math.floor((p.y + p.h) / TILE);
+      var centerTile = Math.floor(p.centerX() / TILE);
+
+      // Wegpunkt abhaken, sobald wir dort stehen.
+      while (index < path.length - 1) {
+        var here = path[index];
+        var atTile = Math.abs(p.centerX() - (here.tx * TILE + TILE / 2)) < 14;
+        if (p.onGround && atTile && feetRow === here.ty + 1) {
+          index++;
+          lastProgress = t;
+        } else {
+          break;
+        }
+      }
+
+      var wp = path[index];
+      var targetX = wp.tx * TILE + TILE / 2;
+      var delta = targetX - p.centerX();
+      var dir = delta > 6 ? 1 : (delta < -6 ? -1 : 0);
+
+      if (p.onGround && jumpTimer <= 0) {
+        var ahead = dir !== 0 ? centerTile + dir : centerTile;
+        // An der Plattformkante: gleich springen, der Anlauf ist da.
+        var gapAhead = dir !== 0 &&
+          !level.isSolid(ahead, feetRow) && !level.isOneWay(ahead, feetRow);
+        // Wand direkt voraus.
+        var wallAhead = dir !== 0 &&
+          (level.isSolid(ahead, feetRow - 1) || level.isSolid(ahead, feetRow - 2));
+        // Hoeher gelegenes Ziel erst aus der Naehe anspringen - wer schon in
+        // der Plattformmitte abhebt, landet in der Luecke davor.
+        var higher = wp.ty < feetRow - 1 && Math.abs(delta) <= TILE * 3.5;
+        if (gapAhead || wallAhead || higher) {
+          jumpTimer = 0.3;
+          jumpStart = true;
+        }
+      }
+
+      var input = {
+        left: dir < 0,
+        right: dir > 0,
+        jump: jumpTimer > 0,
+        down: false,
+        jumpPressed: jumpStart
+      };
+      jumpStart = false;
+      if (jumpTimer > 0) { jumpTimer -= dt; }
+
+      level.update(dt, t);
+      p.update(dt, input, level);
+      p.checkFate(level);
+      t += dt;
+
+      if (p.finished) { return { ok: true, time: t, player: p }; }
+      if (!p.alive) { return { ok: false, time: t, player: p, reason: 'gestorben (' + p.cause + ')' }; }
+
+      if (t - lastProgress > 6) {
+        stuck = 1;
+        break;
+      }
+    }
+
+    return {
+      ok: false,
+      time: t,
+      player: p,
+      reason: stuck ? 'steckt bei Wegpunkt ' + index + '/' + path.length + ' fest'
+        : 'Zeit abgelaufen bei Wegpunkt ' + index + '/' + path.length
+    };
+  }
+
+  (function testLevelsWithoutBlocks() {
+    var levels = <?= json_encode(Levels::all()) ?>;
+    levels.forEach(function (def) {
+      var level = makeLevel(def);
+      var found = findPath(level);
+      if (found.error) {
+        check('„' + def.name + '" ist ohne Bauteile schaffbar', false, found.error);
+        return;
+      }
+      var run = runPath(level, found.path, 45);
+      check('„' + def.name + '" ist ohne Bauteile schaffbar',
+        run.ok,
+        run.ok
+          ? 'Ziel nach ' + run.time.toFixed(1) + 's über ' + found.path.length + ' Wegpunkte'
+          : run.reason + ' (x=' + run.player.x.toFixed(0) + ', y=' + run.player.y.toFixed(0) + ')');
+    });
   }());
 
   /* ------------------------------------------- Abgleich mit dem Server */

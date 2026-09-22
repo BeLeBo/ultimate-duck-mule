@@ -12,13 +12,13 @@
     ice: { solid: true, friction: 0.07, accel: 0.35 },
     bounce: { solid: true, bounce: true },
     crumble: { solid: true, crumble: 0.45 },
-    cloud: { oneWay: true },
     conveyor: { solid: true, conveyor: true, rotatable: true },
-    honey: { solid: true, sticky: true, climbWall: true },
-    ladder: { climb: true },
+    honey: { solid: true, sticky: true },
+    oil: { slick: true },
     fan: { solid: true, fan: true, rotatable: true, range: 5 },
     spike: { deadly: 'stachel', face: true, rotatable: true },
     saw: { deadly: 'saege', saw: true, rotatable: true },
+    wrecker: { deadly: 'pendel', wrecker: true },
     arrow: { solid: true, shooter: true, rotatable: true }
   };
 
@@ -44,6 +44,7 @@
     this.cells = new Array(this.cols * this.rows);
     this.blocks = [];
     this.saws = [];
+    this.wreckers = [];
     this.shooters = [];
     this.streams = [];
     this.hazards = [];
@@ -151,6 +152,7 @@
   /** Leitet Saegen, Luftstroeme, Schuetzen und toedliche Flaechen neu ab. */
   Level.prototype.refreshDynamics = function () {
     this.saws = [];
+    this.wreckers = [];
     this.shooters = [];
     this.streams = [];
     this.hazards = [];
@@ -161,6 +163,8 @@
 
       if (spec.saw) {
         this.saws.push(this.makeSaw(cell));
+      } else if (spec.wrecker) {
+        this.wreckers.push(this.makeWrecker(cell));
       } else if (spec.shooter) {
         this.shooters.push({
           cell: cell,
@@ -235,6 +239,43 @@
     };
   };
 
+  /**
+   * Pendel: Kugel an einer Kette unter dem Ankerblock. Die Kette ist so lang,
+   * wie darunter Platz ist (hoechstens 4 Kacheln).
+   */
+  Level.prototype.makeWrecker = function (cell) {
+    var reach = 0;
+    for (var step = 1; step <= 4; step++) {
+      var ty = cell.ty + step;
+      if (!this.inBounds(cell.tx, ty) || this.isSolid(cell.tx, ty)) { break; }
+      reach = step;
+    }
+    var length = Math.max(1, reach) * TILE;
+
+    return {
+      cell: cell,
+      ax: cell.tx * TILE + TILE / 2,
+      ay: cell.ty * TILE + TILE / 2,
+      length: length,
+      radius: 12,
+      maxAngle: 1.15,
+      // Echte Pendelformel, damit lange Ketten traeger schwingen.
+      period: 2 * Math.PI * Math.sqrt(length / 1900),
+      phase: ((cell.id || 1) * 0.53) % 1,
+      ownerSlot: cell.ownerSlot,
+      angle: 0,
+      x: cell.tx * TILE + TILE / 2,
+      y: cell.ty * TILE + TILE / 2 + length
+    };
+  };
+
+  Level.prototype.updateWrecker = function (wrecker, time) {
+    var t = (time / wrecker.period + wrecker.phase) * Math.PI * 2;
+    wrecker.angle = wrecker.maxAngle * Math.sin(t);
+    wrecker.x = wrecker.ax + Math.sin(wrecker.angle) * wrecker.length;
+    wrecker.y = wrecker.ay + Math.cos(wrecker.angle) * wrecker.length;
+  };
+
   /** Luftstrom eines Ventilators: Kachel fuer Kachel bis zum naechsten Hindernis. */
   Level.prototype.buildStream = function (cell) {
     var dir = DIRS[cell.rot];
@@ -268,6 +309,7 @@
     this.particles.length = 0;
     this.refreshDynamics();
     for (var s = 0; s < this.saws.length; s++) { this.updateSaw(this.saws[s], 0); }
+    for (var w = 0; w < this.wreckers.length; w++) { this.updateWrecker(this.wreckers[w], 0); }
   };
 
   Level.prototype.updateSaw = function (saw, time) {
@@ -289,6 +331,10 @@
 
     for (i = 0; i < this.saws.length; i++) {
       this.updateSaw(this.saws[i], time);
+    }
+
+    for (i = 0; i < this.wreckers.length; i++) {
+      this.updateWrecker(this.wreckers[i], time);
     }
 
     for (i = 0; i < this.shooters.length; i++) {
