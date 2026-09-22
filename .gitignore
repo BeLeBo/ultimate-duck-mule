@@ -1,0 +1,8 @@
+# Laufzeitdaten der Online-Raeume
+/data/rooms/*.json
+
+# Editor / OS
+.DS_Store
+*.swp
+.idea/
+.vscode/

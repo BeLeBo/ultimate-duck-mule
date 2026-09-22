@@ -1,0 +1,197 @@
+/* Ultimate Duck Mule - Grundlagen: Konstanten, Mathe-Helfer, Sound.
+ * Alles haengt unter window.UDM, damit die Dateien ohne Build-Schritt
+ * einfach nacheinander eingebunden werden koennen. */
+(function (global) {
+  'use strict';
+
+  var UDM = global.UDM || (global.UDM = {});
+
+  /* ---------------------------------------------------------------- Welt */
+
+  UDM.TILE = 32;
+  UDM.COLS = 40;
+  UDM.ROWS = 23;
+
+  UDM.worldWidth = function () { return UDM.COLS * UDM.TILE; };
+  UDM.worldHeight = function () { return UDM.ROWS * UDM.TILE; };
+
+  /* ------------------------------------------------------------- Physik */
+
+  UDM.PHYS = {
+    gravity: 1900,
+    moveSpeed: 245,
+    accelGround: 2600,
+    accelAir: 1500,
+    frictionGround: 2800,
+    frictionAir: 420,
+    jumpVel: -645,
+    jumpCut: 0.42,
+    maxFall: 1150,
+    coyote: 0.09,
+    jumpBuffer: 0.11,
+    wallSlideMax: 150,
+    wallJumpX: 310,
+    wallJumpY: -600,
+    wallLock: 0.13,
+    climbUp: -145,
+    climbDown: 150,
+    conveyorSpeed: 190,
+    stickyFactor: 0.45,
+    bounceMin: 680,
+    playerW: 22,
+    playerH: 26
+  };
+
+  /* ------------------------------------------------------------ Spieler */
+
+  UDM.SLOT_COLORS = ['#ffcb3d', '#3fc7f0', '#ff6f91'];
+  UDM.SLOT_DARK = ['#b8860b', '#1b7fa3', '#b03a5c'];
+
+  UDM.CHARACTERS = {
+    duck: { label: 'Ente' },
+    mule: { label: 'Maultier' },
+    racoon: { label: 'Waschbär' }
+  };
+
+  UDM.DEATH_LABELS = {
+    sturz: 'abgestürzt',
+    stachel: 'aufgespießt',
+    saege: 'zersägt',
+    pfeil: 'durchbohrt',
+    quetsch: 'zerquetscht',
+    zeit: 'Zeit abgelaufen',
+    verbindung: 'Verbindung weg',
+    ziel: 'im Ziel'
+  };
+
+  /* -------------------------------------------------------------- Mathe */
+
+  UDM.clamp = function (v, lo, hi) { return v < lo ? lo : (v > hi ? hi : v); };
+  UDM.lerp = function (a, b, t) { return a + (b - a) * t; };
+
+  UDM.approach = function (value, target, delta) {
+    if (value < target) { return Math.min(value + delta, target); }
+    return Math.max(value - delta, target);
+  };
+
+  UDM.overlaps = function (a, b) {
+    return a.x < b.x + b.w && a.x + a.w > b.x && a.y < b.y + b.h && a.y + a.h > b.y;
+  };
+
+  /** Kleiner, deterministischer Zufallsgenerator (mulberry32). */
+  UDM.rng = function (seed) {
+    var s = seed >>> 0;
+    return function () {
+      s = (s + 0x6D2B79F5) >>> 0;
+      var t = Math.imul(s ^ (s >>> 15), 1 | s);
+      t = (t + Math.imul(t ^ (t >>> 7), 61 | t)) ^ t;
+      return ((t ^ (t >>> 14)) >>> 0) / 4294967296;
+    };
+  };
+
+  UDM.pick = function (list, rand) {
+    return list[Math.floor((rand || Math.random)() * list.length) % list.length];
+  };
+
+  UDM.escapeHtml = function (text) {
+    return String(text).replace(/[&<>"']/g, function (ch) {
+      return { '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[ch];
+    });
+  };
+
+  /* -------------------------------------------------------------- Sound */
+
+  /** Kurze, komplett synthetische Effekte - es sind ja keine Assets erlaubt. */
+  UDM.Audio = {
+    ctx: null,
+    enabled: true,
+    master: null,
+
+    init: function () {
+      if (this.ctx) { return; }
+      var Ctor = global.AudioContext || global.webkitAudioContext;
+      if (!Ctor) { this.enabled = false; return; }
+      this.ctx = new Ctor();
+      this.master = this.ctx.createGain();
+      this.master.gain.value = 0.28;
+      this.master.connect(this.ctx.destination);
+    },
+
+    resume: function () {
+      this.init();
+      if (this.ctx && this.ctx.state === 'suspended') { this.ctx.resume(); }
+    },
+
+    setEnabled: function (on) {
+      this.enabled = !!on;
+      if (this.master) { this.master.gain.value = on ? 0.28 : 0; }
+    },
+
+    /** Ein Ton mit Huellkurve. */
+    tone: function (opts) {
+      if (!this.enabled) { return; }
+      this.init();
+      if (!this.ctx) { return; }
+      var ctx = this.ctx;
+      var now = ctx.currentTime;
+      var dur = opts.dur || 0.12;
+      var osc = ctx.createOscillator();
+      var gain = ctx.createGain();
+      osc.type = opts.type || 'square';
+      osc.frequency.setValueAtTime(opts.from || 440, now);
+      if (opts.to) {
+        osc.frequency.exponentialRampToValueAtTime(Math.max(20, opts.to), now + dur);
+      }
+      gain.gain.setValueAtTime(0.0001, now);
+      gain.gain.exponentialRampToValueAtTime(opts.vol || 0.3, now + 0.008);
+      gain.gain.exponentialRampToValueAtTime(0.0001, now + dur);
+      osc.connect(gain);
+      gain.connect(this.master);
+      osc.start(now);
+      osc.stop(now + dur + 0.02);
+    },
+
+    noise: function (dur, vol) {
+      if (!this.enabled) { return; }
+      this.init();
+      if (!this.ctx) { return; }
+      var ctx = this.ctx;
+      var len = Math.floor(ctx.sampleRate * (dur || 0.2));
+      var buffer = ctx.createBuffer(1, len, ctx.sampleRate);
+      var data = buffer.getChannelData(0);
+      for (var i = 0; i < len; i++) {
+        data[i] = (Math.random() * 2 - 1) * (1 - i / len);
+      }
+      var src = ctx.createBufferSource();
+      var gain = ctx.createGain();
+      gain.gain.value = vol || 0.22;
+      src.buffer = buffer;
+      src.connect(gain);
+      gain.connect(this.master);
+      src.start();
+    },
+
+    jump: function () { this.tone({ type: 'square', from: 330, to: 620, dur: 0.11, vol: 0.18 }); },
+    bounce: function () { this.tone({ type: 'sine', from: 240, to: 880, dur: 0.18, vol: 0.26 }); },
+    die: function () { this.tone({ type: 'sawtooth', from: 420, to: 60, dur: 0.35, vol: 0.25 }); this.noise(0.25, 0.18); },
+    goal: function () {
+      var self = this;
+      [523, 659, 784, 1047].forEach(function (f, i) {
+        setTimeout(function () { self.tone({ type: 'triangle', from: f, dur: 0.16, vol: 0.26 }); }, i * 85);
+      });
+    },
+    place: function () { this.tone({ type: 'triangle', from: 180, to: 120, dur: 0.1, vol: 0.25 }); },
+    select: function () { this.tone({ type: 'square', from: 700, dur: 0.05, vol: 0.12 }); },
+    deny: function () { this.tone({ type: 'square', from: 180, to: 90, dur: 0.14, vol: 0.2 }); },
+    tick: function () { this.tone({ type: 'sine', from: 880, dur: 0.07, vol: 0.16 }); },
+    start: function () { this.tone({ type: 'sine', from: 1320, dur: 0.22, vol: 0.22 }); },
+    shoot: function () { this.tone({ type: 'sawtooth', from: 900, to: 400, dur: 0.07, vol: 0.1 }); },
+    crumble: function () { this.noise(0.18, 0.14); },
+    win: function () {
+      var self = this;
+      [523, 659, 784, 1047, 1319].forEach(function (f, i) {
+        setTimeout(function () { self.tone({ type: 'triangle', from: f, dur: 0.3, vol: 0.28 }); }, i * 130);
+      });
+    }
+  };
+}(window));
