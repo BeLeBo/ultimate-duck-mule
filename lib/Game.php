@@ -695,13 +695,39 @@ final class Game
 
     public static function cleanName(string $name, int $slot): string
     {
-        $name = trim(preg_replace('/\s+/u', ' ', $name) ?? '');
-        $name = mb_substr($name, 0, 14);
+        // Mehrfache Leerzeichen zusammenfassen. Bei kaputtem UTF-8 liefert
+        // der /u-Modifier null - dann ohne Unicode-Modus nachfassen.
+        $clean = preg_replace('/\s+/u', ' ', $name);
+        if ($clean === null) {
+            $clean = preg_replace('/\s+/', ' ', $name);
+        }
+
+        $name = self::truncate(trim((string) $clean), 14);
         if ($name === '') {
             $name = 'Spieler ' . ($slot + 1);
         }
 
         return $name;
+    }
+
+    /**
+     * Kuerzt einen Text auf eine Zeichenzahl - ohne die Erweiterung mbstring
+     * vorauszusetzen. Die ist auf Debian/Ubuntu/Mint ein eigenes Paket und
+     * bei einer schlanken php-cli-Installation oft nicht dabei.
+     */
+    public static function truncate(string $text, int $limit): string
+    {
+        if (function_exists('mb_substr')) {
+            return mb_substr($text, 0, $limit, 'UTF-8');
+        }
+
+        // PCRE kann UTF-8 von Haus aus: "." zaehlt hier ganze Zeichen.
+        $cut = preg_replace('/^(.{0,' . $limit . '}).*$/us', '$1', $text);
+        if ($cut !== null) {
+            return $cut;
+        }
+
+        return substr($text, 0, $limit);
     }
 
     public static function cleanChar(string $char, int $slot): string

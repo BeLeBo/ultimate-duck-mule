@@ -32,40 +32,63 @@ weiter.
 
 ## Starten
 
-Es genügt PHP 8.1 oder neuer:
-
-```bash
-php -S localhost:8000
-```
-
-Dann `http://localhost:8000/` im Browser öffnen. Alternativ das Verzeichnis auf
-einen beliebigen Webspace mit PHP legen – für den lokalen Modus reicht sogar
-reines Ausliefern der Dateien, für den Online-Modus wird PHP gebraucht.
-
-Damit der Online-Modus funktioniert, muss `data/rooms/` für den Webserver
-beschreibbar sein (dort liegt pro Raum eine JSON-Datei).
-
-### Wenn der Server `404 ... - No such file or directory` meldet
-
-Dann steht der Server im falschen Verzeichnis. `php -S` liefert nur Dateien
-aus dem Ordner aus, in dem er gestartet wurde – Rootrechte ändern daran
-nichts, `sudo` wird hier nicht gebraucht.
+Es genügt PHP 7.4 oder neuer – **ohne Zusatzerweiterungen**, ein nacktes
+`php-cli` reicht. Empfohlener Weg:
 
 ```bash
 git clone https://github.com/BeLeBo/ultimate-duck-mule.git
 cd ultimate-duck-mule
-ls index.php          # muss "index.php" ausgeben, sonst stimmt der Ordner nicht
+php start.php
+```
+
+`start.php` prüft vorher PHP-Version, Dateien und Schreibrechte, sucht einen
+freien Port und startet den Server **immer mit dem richtigen
+Wurzelverzeichnis** – es ist egal, aus welchem Ordner du das Skript aufrufst.
+Außerdem schaltet er Fehlermeldungen sichtbar, damit ein Problem im Browser
+lesbar dasteht statt als nackte „500 Internal Server Error"-Seite.
+Danach `http://localhost:8000/` im Browser öffnen.
+
+```bash
+php start.php 8080     # anderer Port
+php start.php --lan    # auch für Mitspieler im selben WLAN erreichbar
+php start.php --check  # nur prüfen, nicht starten
+```
+
+Ohne Starter geht es genauso, dann muss man aber selbst im Projektordner
+stehen:
+
+```bash
+cd ultimate-duck-mule
 php -S localhost:8000
 ```
 
-Beim Start schreibt PHP die Zeile `Document root is ...` ins Terminal – dort
-muss genau der Ordner stehen, in dem `index.php` liegt. Stimmt er, gibt es
-beim Aufruf von `http://localhost:8000/` **keine** 404-Zeilen mehr.
+Alternativ das Verzeichnis auf einen beliebigen Webspace mit PHP legen.
+Damit der Online-Modus funktioniert, muss `data/rooms/` für den Webserver
+beschreibbar sein (dort liegt pro Raum eine JSON-Datei).
 
-Unter Windows funktioniert derselbe Befehl in der Eingabeaufforderung. Wer
-dort kein PHP installiert hat, kann stattdessen XAMPP nehmen und den Ordner
+Unter Windows funktioniert `php start.php` in der Eingabeaufforderung
+genauso. Wer dort kein PHP installiert hat, kann XAMPP nehmen und den Ordner
 nach `C:\xampp\htdocs\` kopieren; das Spiel liegt dann unter
 `http://localhost/ultimate-duck-mule/`.
+
+### Wenn etwas nicht läuft
+
+`php start.php --check` prüft Version, Dateien, Schreibrechte und
+Erweiterungen, ohne den Server zu starten.
+
+**`404 ... No such file or directory`** – der Server wurde im falschen Ordner
+gestartet; `php -S` liefert nur aus *seinem* Verzeichnis aus. Rootrechte
+ändern daran nichts, `sudo` hilft hier nicht. Beim Start schreibt PHP die
+Zeile `Document root is ...` ins Terminal, dort muss der Ordner stehen, in
+dem `index.php` liegt. `php start.php` kann gar nicht im falschen Ordner
+landen. Nach dem Entpacken des ZIP von GitHub liegt übrigens alles nochmal
+eine Ebene tiefer in `ultimate-duck-mule-<branch>/`.
+
+**Menü lädt, aber „Los geht's" bringt 500** – ein PHP-Fehler in `game.php`.
+Die genaue Meldung steht immer im Terminal, in dem der Server läuft; mit
+`php start.php` erscheint sie zusätzlich im Browser. Früher passierte das,
+wenn `php-mbstring` fehlte – das Spiel kommt inzwischen ohne diese
+Erweiterung aus.
 
 ## Spielmodi
 
@@ -137,6 +160,7 @@ auseinanderlaufen.
 ## Projektstruktur
 
 ```
+start.php              Starter fürs Terminal: prüft alles und startet den Server
 index.php              Menü: lokales Spiel einrichten, Raum erstellen/beitreten
 game.php               Spielseite; liefert Level- und Kartendaten als JSON an den Client
 tests.php              Selbsttest-Seite (Physik + Abgleich PHP/JavaScript)

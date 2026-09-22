@@ -16,15 +16,23 @@ require_once __DIR__ . '/../lib/Levels.php';
 header('Content-Type: application/json; charset=utf-8');
 header('Cache-Control: no-store');
 
-/** @param array<string, mixed> $payload */
-function respond(array $payload, int $status = 200): never
+/**
+ * Beendet den Request mit einer JSON-Antwort.
+ *
+ * Bewusst ohne "never"-Rueckgabetyp, damit die Datei auch auf PHP 7.4 laeuft.
+ *
+ * @param array<string, mixed> $payload
+ * @return void Kehrt nie zurueck.
+ */
+function respond(array $payload, int $status = 200)
 {
     http_response_code($status);
     echo json_encode($payload, JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES);
     exit;
 }
 
-function fail(string $message, int $status = 400): never
+/** @return void Kehrt nie zurueck. */
+function fail(string $message, int $status = 400)
 {
     respond(['ok' => false, 'error' => $message], $status);
 }
