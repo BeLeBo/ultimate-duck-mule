@@ -822,3 +822,71 @@ span.lobby-preview { font-size: 60px; }
   .pull-sign { left: auto; right: -6px; top: -54px; transform: none; }
   .slot.pulled .pull-sign { transform: translateY(-8px); }
 }
+
+/* Las-Vegas-Leuchtreklame: alles zeigt auf den Hebelknauf */
+.vegas {
+  position: absolute;
+  left: calc(100% + 16px);
+  top: calc(50% - 64px);
+  width: 0;
+  height: 0;
+  pointer-events: none;
+  transition: opacity 0.25s ease;
+}
+.slot.pulled .vegas { opacity: 0; }
+.vegas-arrow { position: absolute; left: 0; top: 0; width: 0; height: 0; }
+.vegas-arrow svg {
+  position: absolute;
+  left: 0;
+  top: 0;
+  transform: translate(-50%, -50%);
+  overflow: visible;
+  filter: drop-shadow(0 0 3px currentColor) drop-shadow(0 0 9px currentColor);
+  animation: neon-poke 0.7s ease-in-out infinite, neon-flicker 1.3s steps(1, end) infinite;
+}
+.vegas-arrow path, .vegas-arc path {
+  fill: none;
+  stroke: currentColor;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+}
+.vegas-arrow path { stroke-width: 5; }
+.vegas-arc {
+  position: absolute;
+  left: -20px;
+  top: -200px;
+  overflow: visible;
+  filter: drop-shadow(0 0 4px #ffe34d);
+}
+.vegas-arc .dots {
+  stroke-width: 7;
+  stroke-dasharray: 0.1 16;
+  animation: dots-march 0.55s linear infinite;
+}
+.vegas-arc .head { stroke-width: 6; animation: neon-flicker 0.8s steps(1, end) infinite; }
+.vegas-star {
+  position: absolute;
+  font-style: normal;
+  font-size: 16px;
+  color: #fff6b0;
+  text-shadow: 0 0 8px #ffe34d, 0 0 16px #ff3df2;
+  transform: translate(-50%, -50%);
+  animation: star-twinkle 1.4s ease-in-out infinite;
+}
+@keyframes neon-poke {
+  0%, 100% { transform: translate(-50%, -50%); }
+  50% { transform: translate(calc(-50% + 9px), -50%); }
+}
+@keyframes neon-flicker {
+  0% { opacity: 1; }
+  8% { opacity: 0.25; }
+  12% { opacity: 1; }
+  60% { opacity: 1; }
+  64% { opacity: 0.45; }
+  70% { opacity: 1; }
+}
+@keyframes dots-march { to { stroke-dashoffset: -16.1; } }
+@keyframes star-twinkle {
+  0%, 100% { opacity: 0.2; transform: translate(-50%, -50%) scale(0.6) rotate(0deg); }
+  50% { opacity: 1; transform: translate(-50%, -50%) scale(1.25) rotate(45deg); }
+}

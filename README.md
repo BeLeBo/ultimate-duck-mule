@@ -143,9 +143,10 @@ Schussbahn, Pendelweg, Sägenschiene. Ohne Maus bewegt man den Bauzeiger mit den
 Laufen-/Springen-Tasten und setzt mit `Enter`.
 
 Zu Beginn des eigenen Bauzugs erscheint in der Bildschirmmitte ein
-**Spielautomat**. Den Hebel zieht man selbst – anklicken oder Leertaste; ein
-blinkendes PULL-Schild mit Lauflicht-Pfeilen zeigt darauf, und nach 15 Sekunden
-hilft der Automat nach. Dann laufen die Walzen an, bremsen ab und rasten
+**Spielautomat**. Den Hebel zieht man selbst – anklicken oder Leertaste. Wie in
+Las Vegas zeigt alles darauf: ein blinkendes PULL-Schild, ein Fächer aus flackernden
+Neonpfeilen, Lauflicht-Bögen und funkelnde Sterne. Nach 15 Sekunden hilft der
+Automat selbst nach. Dann laufen die Walzen an, bremsen ab und rasten
 nacheinander auf den gezogenen Karten ein – danach geht es los. Wer aufgibt,
 hört die traurige Posaune.
 **Die anderen sehen nur, wo gebaut wird** – die Vorschau am Mauszeiger des

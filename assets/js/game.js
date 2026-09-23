@@ -945,6 +945,7 @@
         '<div class="slot-foot">Viel Glück!</div>' +
         '<div class="slot-lever" title="Hebel ziehen"><div class="lever-base"></div>' +
         '<div class="lever-arm"><div class="lever-knob"></div></div></div>' +
+        this.vegasHtml() +
         '<div class="pull-sign" title="Hebel ziehen">' +
         '<span class="pull-arrows"><i>◀</i><i>◀</i><i>◀</i></span>' +
         '<div class="pull-board">' + this.bulbs(7) + '<b>PULL!</b>' + this.bulbs(7) + '</div>' +
@@ -952,6 +953,46 @@
         '</div>';
       slot.className = 'slot';
       this.paintSlot();
+    },
+
+    /**
+     * Leuchtreklame wie in Las Vegas rund um den Hebelknauf: ein Faecher aus
+     * Neonpfeilen, die alle auf den Knauf zeigen und darauf zustossen, zwei
+     * geschwungene Lauflicht-Boegen und funkelnde Sterne. Der Container sitzt
+     * genau auf dem Knauf, alle Positionen sind relativ dazu.
+     */
+    vegasHtml: function () {
+      var colors = ['#ff3df2', '#3df5ff', '#ffe34d', '#7dff5c', '#ff7a3d'];
+      // Winkel (Grad, 0 = rechts, negativ = oben) und Abstand zum Knauf.
+      // Den waagerechten Streifen rechts haelt das PULL-Schild frei.
+      var fan = [
+        [-38, 78], [-62, 96], [-88, 88], [-114, 104], [-50, 150],
+        [-78, 160], [-104, 168], [38, 80], [62, 104], [88, 92], [52, 152], [78, 170]
+      ];
+      var html = '<div class="vegas">';
+      fan.forEach(function (spec, i) {
+        var rad = spec[0] * Math.PI / 180;
+        var x = Math.round(Math.cos(rad) * spec[1]);
+        var y = Math.round(Math.sin(rad) * spec[1]);
+        var size = spec[1] > 120 ? 44 : 34;
+        html += '<span class="vegas-arrow" style="transform:translate(' + x + 'px,' + y + 'px) rotate(' +
+          (spec[0] + 180) + 'deg);color:' + colors[i % colors.length] + '">' +
+          '<svg viewBox="0 0 60 24" width="' + size + '" height="' + Math.round(size * 0.4) + '"' +
+          ' style="animation-delay:' + (i * 0.13).toFixed(2) + 's,' + (i * 0.37 % 1.3).toFixed(2) + 's">' +
+          '<path d="M4 12 H44 M32 3 L52 12 L32 21"/></svg></span>';
+      });
+      // Zwei Lauflicht-Boegen: von oben und von unten auf den Knauf zu.
+      html += '<svg class="vegas-arc" viewBox="-20 -200 240 400" width="240" height="400">' +
+        '<path class="dots" style="color:#ffe34d" d="M205 -185 C 200 -60, 90 -95, 8 -34"/>' +
+        '<path class="head" style="color:#ffe34d" d="M24 -50 L6 -30 L30 -28"/>' +
+        '<path class="dots" style="color:#3df5ff" d="M205 185 C 200 60, 90 95, 8 34"/>' +
+        '<path class="head" style="color:#3df5ff" d="M24 50 L6 30 L30 28"/>' +
+        '</svg>';
+      [[140, -120], [175, -40], [110, 120], [-40, -150], [185, 60], [60, -175], [150, 185]].forEach(function (pos, i) {
+        html += '<i class="vegas-star" style="left:' + pos[0] + 'px;top:' + pos[1] + 'px;animation-delay:' +
+          (i * 0.23).toFixed(2) + 's">✦</i>';
+      });
+      return html + '</div>';
     },
 
     /** Eine Reihe Gluehbirnen fuer das PULL-Schild (blinken abwechselnd). */
