@@ -359,6 +359,8 @@ final class Game
             $player['hand'] = Cards::deal(self::HAND_SIZE);
             $player['places'] = self::PLACES_PER_TURN;
             $player['buffs'] = [];
+            // Automatisch eingesetztes Power-up dieses Zugs (fuer die Anzeige).
+            $player['bonus'] = null;
             $player['placed'] = !in_array($token, $active, true);
             $player['ready'] = false;
             $player['result'] = null;
@@ -595,12 +597,43 @@ final class Game
                 $room['turn'] = $idx;
                 $room['phaseStarted'] = time();
                 $room['buildView'] = null;
+                self::startTurn($room);
 
                 return;
             }
         }
 
         self::beginParty($room);
+    }
+
+    /**
+     * Beginn eines Bauzugs: Power-ups, die der eigenen Figur helfen, setzen
+     * sich sofort selbst ein - niemand muss sie anklicken. Nur die
+     * Abrissbirne bleibt auf der Hand, sie braucht ein Ziel.
+     *
+     * @param array<string, mixed> $room
+     */
+    public static function startTurn(array &$room): void
+    {
+        $token = self::currentBuilder($room);
+        if ($token === null || !isset($room['players'][$token])) {
+            return;
+        }
+        $player = &$room['players'][$token];
+        $keep = [];
+        foreach ($player['hand'] as $card) {
+            if (Cards::isBuff($card)) {
+                if (!in_array($card, $player['buffs'] ?? [], true)) {
+                    $player['buffs'][] = $card;
+                }
+                $player['bonus'] = $card;
+                self::log($room, self::nameOf($room, $token) . ' zieht ' . Cards::POWERUPS[$card]['name'] . '!');
+            } else {
+                $keep[] = $card;
+            }
+        }
+        $player['hand'] = $keep;
+        unset($player);
     }
 
     /** @param array<string, mixed> $room */
@@ -611,6 +644,7 @@ final class Game
             $player = $room['players'][$order[$idx]] ?? null;
             if ($player !== null && !$player['placed'] && self::isConnected($player)) {
                 $room['turn'] = $idx;
+                self::startTurn($room);
 
                 return;
             }
@@ -1231,6 +1265,9 @@ final class Game
                 'hand' => $isYou ? array_values($player['hand']) : [],
                 'places' => (int) ($player['places'] ?? 0),
                 'buffs' => array_values($player['buffs'] ?? []),
+                // Welches Power-up sich diesen Zug von selbst eingesetzt hat -
+                // nur fuer den Spieler selbst (fuer den Spielautomaten).
+                'bonus' => $isYou ? ($player['bonus'] ?? null) : null,
                 'pos' => $player['pos'],
                 'result' => $player['result'],
             ];

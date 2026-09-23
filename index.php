@@ -184,7 +184,7 @@ function levelPicker(string $inputId, string $inputName, string $selected, array
     </ul>
 
     <h3 style="margin-top:18px">Power-ups</h3>
-    <p class="muted small">Liegen oft als vierte Karte auf der Hand und helfen dir selbst. Anklicken setzt sie ein &ndash; sie kosten keinen Zug, m&uuml;ssen aber <strong>vor</strong> dem eigenen Bauteil kommen, denn das beendet den Zug. Doppelsprung, Schutzschild, Turbo und Gleitschirm wirken in der direkt folgenden Partyphase.</p>
+    <p class="muted small">Kommen oft als vierte Walze aus dem Automaten und helfen dir selbst. Doppelsprung, Schutzschild, Turbo und Gleitschirm setzen sich <strong>automatisch</strong> ein und wirken in der folgenden Partyphase. Nur die Abrissbirne bleibt auf der Hand: anklicken und ansetzen &ndash; am besten <strong>vor</strong> dem eigenen Bauteil, denn das beendet den Zug.</p>
     <ul class="cardlist">
       <?php foreach (Cards::POWERUPS as $id => $card): ?>
         <li>

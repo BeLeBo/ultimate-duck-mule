@@ -260,6 +260,15 @@
       }, this);
     },
 
+    /** Power-up gezogen: schnelles Glitzer-Arpeggio nach oben. */
+    powerup: function () {
+      var self = this;
+      [523, 659, 784, 1047, 1319, 1568, 2093].forEach(function (f, i) {
+        setTimeout(function () { self.tone({ type: 'triangle', from: f, dur: 0.16, vol: 0.2 }); }, i * 55);
+      });
+      setTimeout(function () { self.tone({ type: 'sine', from: 2093, to: 3136, dur: 0.35, vol: 0.14 }); }, 400);
+    },
+
     /** Spielautomat: der Hebel rastet nach unten. */
     lever: function () {
       this.tone({ type: 'square', from: 160, to: 70, dur: 0.14, vol: 0.2 });

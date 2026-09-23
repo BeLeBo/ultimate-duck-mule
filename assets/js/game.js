@@ -22,6 +22,7 @@
   var ROLL_FIRST = 1.1;
   var ROLL_STEP = 0.4;
   var ROLL_HOLD = 0.8;
+  var POWER_HOLD = 1.6;             // Extra-Zeit, wenn ein Power-up gezogen wurde
   // Walzen: Fenstergroesse, Symbolgroesse und Abstand der Symbole (px).
   var REEL_W = 84;
   var REEL_H = 132;
@@ -652,7 +653,10 @@
         if (builder && (phaseChanged || previous.turnSlot !== state.turnSlot)) {
           this.build.deleting = false;
           this.setBanner(builder.slot === this.mySlot ? 'Du baust!' : (builder.name + ' baut …'));
-          if (builder.slot === this.mySlot) { this.startRoll(builder.hand); }
+          if (builder.slot === this.mySlot) {
+            // Ein Power-up, das sich selbst eingesetzt hat, rollt als eigene Walze mit.
+            this.startRoll((builder.hand || []).concat(builder.bonus ? [builder.bonus] : []));
+          }
           else { this.stopRoll(); }
         }
       } else if (state.phase === 'score') {
@@ -722,6 +726,7 @@
         player.remote = info.slot !== this.mySlot;
         // Handkarten kommen nur fuer die eigene Figur.
         player.hand = info.you ? (info.hand || []) : [];
+        player.bonus = info.you ? (info.bonus || null) : null;
         if (player.remote && state.phase === 'party' && info.pos) {
           if (player.x === 0 && player.y === 0) {
             player.x = info.pos.x;
@@ -788,6 +793,8 @@
     /** Kleine Marken fuer die Power-ups, die diese Runde wirken. */
     buffBadges: function (player) {
       if (this.phase !== 'build' && this.phase !== 'party') { return ''; }
+      // Nicht verraten, was der Automat gleich ausspuckt.
+      if (this.roll && player.slot === this.mySlot) { return ''; }
       var self = this;
       return (player.buffs || []).map(function (id) {
         return ' <span class="pbuff" title="' + UDM.escapeHtml(self.cardMeta(id).name) + '">' +
@@ -888,11 +895,14 @@
       }
       var pool = Object.keys(this.cfg.cards).concat(Object.keys(this.cfg.powerups || {}));
       var pick = function () { return pool[Math.floor(Math.random() * pool.length)]; };
+      var self = this;
       this.roll = {
         time: 0,
         pulled: false,
         pullAt: 0,
         finishing: false,
+        // Mit Power-up bleibt das Ergebnis laenger stehen - der Effekt soll wirken.
+        hold: ROLL_HOLD + (hand.some(function (id) { return self.isPowerUp(id); }) ? POWER_HOLD : 0),
         reels: hand.map(function (id, i) {
           var dur = ROLL_FIRST + i * ROLL_STEP;
           // So viele Symbole laufen durch, bis die Walze steht.
@@ -995,6 +1005,56 @@
       return html + '</div>';
     },
 
+    /**
+     * Sondereffekt, wenn eine Walze auf einem Power-up einrastet: Blitz,
+     * Funkenregen aus der Walze, leuchtender Rahmen, grosses Banner mit
+     * Symbol und Beschreibung und eine Fanfare.
+     */
+    powerFx: function (index, id) {
+      var slot = this.dom.slot;
+      var machine = slot.querySelector('.slot-machine');
+      var reel = slot.querySelector('[data-reel="' + index + '"]');
+      if (!machine || !reel) { return; }
+      var meta = this.cardMeta(id);
+      reel.classList.add('jackpot');
+      slot.classList.add('powered');
+
+      var flash = document.createElement('div');
+      flash.className = 'power-flash';
+      slot.appendChild(flash);
+
+      // Funken fliegen aus der Mitte der Walze in alle Richtungen.
+      var box = machine.getBoundingClientRect();
+      var cv = reel.querySelector('canvas').getBoundingClientRect();
+      var burst = document.createElement('div');
+      burst.className = 'power-burst';
+      burst.style.left = (cv.left - box.left + cv.width / 2) + 'px';
+      burst.style.top = (cv.top - box.top + cv.height / 2) + 'px';
+      var colors = ['#ffe34d', '#ff3df2', '#3df5ff', '#b18cff', '#ffffff'];
+      var html = '';
+      for (var i = 0; i < 26; i++) {
+        var angle = (i / 26) * Math.PI * 2 + Math.random() * 0.3;
+        var dist = 80 + Math.random() * 110;
+        html += '<i style="--dx:' + Math.round(Math.cos(angle) * dist) + 'px;--dy:' + Math.round(Math.sin(angle) * dist) +
+          'px;--c:' + colors[i % colors.length] + ';animation-delay:' + (Math.random() * 0.12).toFixed(2) + 's">' +
+          (i % 3 ? '✦' : '★') + '</i>';
+      }
+      burst.innerHTML = html;
+      machine.appendChild(burst);
+
+      var banner = document.createElement('div');
+      banner.className = 'power-banner';
+      banner.innerHTML = '<canvas width="56" height="56"></canvas><div><b>POWER-UP!</b>' +
+        '<span>' + UDM.escapeHtml(meta.name) + '</span><small>' +
+        UDM.escapeHtml(id === 'pu_remove' ? 'Bleibt auf der Hand – anklicken und ansetzen.' : 'Automatisch aktiv: ' + meta.desc) +
+        '</small></div>';
+      machine.appendChild(banner);
+      UDM.Render.drawCardIcon(banner.querySelector('canvas'), id, 0, this.time);
+
+      UDM.Render.kick(5);
+      UDM.Audio.powerup();
+    },
+
     /** Eine Reihe Gluehbirnen fuer das PULL-Schild (blinken abwechselnd). */
     bulbs: function (count) {
       var html = '<span class="bulbs">';
@@ -1066,6 +1126,7 @@
               el.classList.toggle('power', this.isPowerUp(reel.id));
               el.querySelector('.slot-name').textContent = this.cardMeta(reel.id).name;
             }
+            if (this.isPowerUp(reel.id)) { this.powerFx(i, reel.id); }
           }
           // Kleines Nachwippen beim Einrasten.
           var b = (roll.time - reel.landedAt) / 0.28;
@@ -1085,10 +1146,16 @@
         UDM.Audio.jackpot();
         this.dom.slot.classList.add('win');
       }
-      if (allLanded && roll.time >= lastLanding + ROLL_HOLD) {
+      if (allLanded && roll.time >= lastLanding + roll.hold) {
         // Alles steht - der Automat verschwindet, jetzt wird gebaut.
+        var bonus = roll.reels.filter(function (r) { return this.isPowerUp(r.id); }, this)[0];
         this.stopRoll(true);
         this.updateHud();
+        if (bonus && bonus.id === 'pu_remove') {
+          this.setBanner('Abrissbirne auf der Hand – anklicken und ansetzen', 2.6);
+        } else if (bonus) {
+          this.setBanner(this.cardMeta(bonus.id).name + ' ist aktiv – gilt in der Partyphase', 2.6);
+        }
         return;
       }
       this.paintSlot();
@@ -1167,7 +1234,7 @@
       } else if (this.phase === 'build') {
         html = '<span><b>Maus</b> platzieren</span><span><b>1-4</b> Karte</span>' +
           '<span><b>R</b> drehen</span>' +
-          '<span>★ Power-ups vor dem eigenen Bauteil einsetzen</span>';
+          '<span>★ Abrissbirne vor dem eigenen Bauteil einsetzen</span>';
       } else {
         html = '<span><b>' + UDM.SOLO_LAYOUT.label + '</b></span><span>Wandsprung: an der Wand springen</span>';
       }
@@ -1462,10 +1529,10 @@
         '<li>Kommt <b>drei Runden lang niemand</b> ins Ziel, wird das Level komplett geräumt.</li>' +
         '</ol>' +
         '<h3>Bauteile</h3><ul class="cardlist">' + list + '</ul>' +
-        '<h3>Power-ups</h3><p class="muted small">Liegen oft als vierte Karte auf der Hand und helfen dir selbst. ' +
-        'Anklicken setzt sie ein – sie kosten keinen Zug, müssen aber <b>vor</b> dem eigenen Bauteil kommen, ' +
-        'denn das beendet den Zug. Doppelsprung, Schutzschild, Turbo und Gleitschirm wirken in der ' +
-        'direkt folgenden Partyphase.</p>' +
+        '<h3>Power-ups</h3><p class="muted small">Kommen oft als vierte Walze aus dem Automaten und helfen dir selbst. ' +
+        'Doppelsprung, Schutzschild, Turbo und Gleitschirm setzen sich <b>automatisch</b> ein und wirken in der ' +
+        'folgenden Partyphase. Nur die Abrissbirne bleibt auf der Hand: anklicken und ansetzen – ' +
+        'am besten <b>vor</b> dem eigenen Bauteil, denn das beendet den Zug.</p>' +
         '<ul class="cardlist">' + powers + '</ul>' +
         '<button class="big" data-action="close">Alles klar</button>',
         'rules'

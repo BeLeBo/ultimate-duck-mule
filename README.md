@@ -199,10 +199,12 @@ Besitzers – wichtig, weil Kills den Bauteil-Besitzer belohnen.
 
 ## Power-ups
 
-In etwa jeder zweiten Hand ist die vierte Karte ein Power-up. Power-ups helfen dem,
-der sie einsetzt. Anklicken setzt sie ein – sie kosten keinen Zug, müssen aber
-**vor** dem eigenen Bauteil kommen, denn das beendet den Zug. Wer nicht mehr bauen
-will, beendet seinen Zug mit **Zug beenden**.
+In etwa jedem zweiten Zug liefert der Automat als vierte Walze ein Power-up – mit
+Blitz, Funkenregen, Banner und Fanfare. Power-ups helfen dem, der sie zieht.
+Doppelsprung, Schutzschild, Turbo und Gleitschirm setzen sich **automatisch** ein;
+nur die Abrissbirne bleibt als Karte auf der Hand, weil sie ein Ziel braucht. Sie
+kostet keinen Zug, muss aber **vor** dem eigenen Bauteil kommen, denn das beendet den
+Zug. Wer nicht mehr bauen will, beendet seinen Zug mit **Zug beenden**.
 
 | Power-up | Wirkung |
 | --- | --- |
@@ -213,7 +215,7 @@ will, beendet seinen Zug mit **Zug beenden**.
 | Abrissbirne | Räumt zwei nebeneinanderliegende Felder – `R` dreht zwischen waagerecht und senkrecht, Klick setzt an |
 
 Doppelsprung, Schutzschild, Turbo und Gleitschirm wirken in der Partyphase direkt
-nach dem Einsetzen. In der Spielerleiste zeigt ein kleines Zeichen, wer gerade was
+nach dem Zug, in dem sie gezogen wurden. In der Spielerleiste zeigt ein kleines Zeichen, wer gerade was
 hat; im Level sieht man Schildblase, Schirm und Turbo-Streifen an der Figur.
 
 ## Welten
@@ -263,10 +265,10 @@ herauslaufen geht nicht, nur nach unten fällt man.
 
 ## Selbsttest
 
-`tests.php` im Browser öffnen. Die Seite fährt 88 Tests: gegen die echte
+`tests.php` im Browser öffnen. Die Seite fährt 89 Tests: gegen die echte
 Spiel-Engine (Sprunghöhen, jedes Bauteil, jede Todesursache, die sichere
 Startzone, Doppelsprung, Schild, Turbo, Gleitschirm), gegen die Serverregeln in PHP
-(Reihenfolge, Kartenziehen, Power-ups, Abrissbirne, verdeckte Handkarten, Farb- und
+(Reihenfolge, Kartenziehen, Power-ups samt automatischem Einsatz, Abrissbirne, verdeckte Handkarten, Farb- und
 Tierwahl, Partyzeit, Punkte nur bei echtem Tod, wann Bauteile verschwinden, Matchende
 nach Runden samt Gleichstand, Grabsteine, Lobby, Karten-Parser) – und sie vergleicht
 Bauregeln, Grabsteine sowie Bauteil- und Power-up-Katalog von JavaScript **mit denen

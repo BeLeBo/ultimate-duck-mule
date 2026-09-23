@@ -87,6 +87,7 @@ $room = $makeRoom(['Anna', 'Bo']);
 Game::startMatch($room, $tokenOf($room, 'Anna'));
 $builder = Game::currentBuilder($room);
 $room['players'][$builder]['hand'] = ['stone', 'pu_djump', 'pu_remove'];
+$room['players'][$builder]['buffs'] = [];
 $room['blocks'] = [
     ['id' => 50, 'type' => 'stone', 'x' => 12, 'y' => 14, 'rot' => 0, 'ownerSlot' => 1],
     ['id' => 51, 'type' => 'beam', 'x' => 13, 'y' => 15, 'rot' => 0, 'ownerSlot' => 1],
@@ -121,8 +122,44 @@ $serverCheck('Ohne Power-up kann niemand selbst löschen',
     !method_exists(Game::class, 'removeBlock') && !array_key_exists('removes', $room['players'][$builder]),
     'removeBlock ' . (method_exists(Game::class, 'removeBlock') ? 'vorhanden' : 'weg'));
 Game::beginRound($room);
+// Neu gezogene Power-ups der neuen Runde (bonus) sind erlaubt, das alte nicht.
+$fresh = $room['players'][$builder]['bonus'] ?? null;
 $serverCheck('Power-ups gelten nur für die folgende Partyphase',
-    $room['players'][$builder]['buffs'] === [], json_encode($room['players'][$builder]['buffs']));
+    $room['players'][$builder]['buffs'] === ($fresh !== null ? [$fresh] : []),
+    json_encode($room['players'][$builder]['buffs']));
+
+// Power-ups setzen sich zu Beginn des eigenen Zugs selbst ein - nur die
+// Abrissbirne bleibt auf der Hand.
+$room = $makeRoom(['Anna', 'Bo']);
+Game::startMatch($room, $tokenOf($room, 'Anna'));
+$first = Game::currentBuilder($room);
+$second = $first === $tokenOf($room, 'Anna') ? $tokenOf($room, 'Bo') : $tokenOf($room, 'Anna');
+$room['players'][$second]['hand'] = ['stone', 'spike', 'ice', 'pu_speed'];
+$room['players'][$second]['buffs'] = [];
+$room['players'][$second]['bonus'] = null;
+$beforeTurn = $room['players'][$second]['buffs'];
+Game::skipBuild($room, $first);
+$ownView = null;
+$otherView = null;
+foreach (Game::publicState($room, $second)['players'] as $p) {
+    if ($p['you']) {
+        $ownView = $p;
+    }
+}
+foreach (Game::publicState($room, $first)['players'] as $p) {
+    if (!$p['you']) {
+        $otherView = $p;
+    }
+}
+$autoOk = $beforeTurn === [] && $room['players'][$second]['buffs'] === ['pu_speed']
+    && $room['players'][$second]['hand'] === ['stone', 'spike', 'ice']
+    && $ownView['bonus'] === 'pu_speed' && $otherView['bonus'] === null;
+// Die Abrissbirne dagegen bleibt als Karte.
+$room['players'][$second]['hand'] = ['stone', 'pu_remove'];
+Game::startTurn($room);
+$serverCheck('Power-ups setzen sich zu Beginn des eigenen Zugs selbst ein, die Abrissbirne bleibt Karte',
+    $autoOk && $room['players'][$second]['hand'] === ['stone', 'pu_remove'],
+    'Buffs ' . json_encode($room['players'][$second]['buffs']) . ', Hand ' . json_encode($room['players'][$second]['hand']));
 
 // Abrissbirne: zwei Felder, waagerecht oder senkrecht.
 $room = $makeRoom(['Anna', 'Bo']);
