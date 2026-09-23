@@ -130,6 +130,8 @@
         if (!card) { return; }
         if (card.hasAttribute('data-rotate')) {
           self.rotateSelection();
+        } else if (card.hasAttribute('data-cancel')) {
+          if (self.build.deleting) { self.setDeleting(false); }
         } else if (card.hasAttribute('data-endturn')) {
           self.endTurn();
         } else {
@@ -236,7 +238,10 @@
       if (this.build.tx < 0) { this.build.tx = Math.floor(this.level.cols / 2); }
       if (this.build.ty < 0) { this.build.ty = Math.floor(this.level.rows / 2); }
 
-      if (this.build.deleting && builder.hand.indexOf('pu_remove') < 0) { this.build.deleting = false; }
+      if (this.build.deleting && builder.hand.indexOf('pu_remove') < 0) {
+        this.build.deleting = false;
+        this.setBanner('');
+      }
 
       this.build.valid = this.build.deleting
         ? this.wreckTargets(this.build.tx, this.build.ty, this.build.wreckRot).length > 0
@@ -248,10 +253,17 @@
         else { this.tryPlace(); }
       }
       if ((input.wasPressed('Escape') || mouse.right) && this.build.deleting) {
-        this.build.deleting = false;
-        this.setBanner('', 0);
-        this.updateHud();
+        this.setDeleting(false);
       }
+    },
+
+    /** Zielmodus der Abrissbirne an- oder ausschalten. */
+    setDeleting: function (on) {
+      this.build.deleting = !!on;
+      UDM.Audio.select();
+      // Solange gezielt wird, bleibt der Hinweis stehen.
+      this.setBanner(on ? 'Abrissbirne: Klick auf ein Bauteil – R dreht · Rechtsklick/Esc bricht ab' : '');
+      this.updateHud();
     },
 
     /** Wie viele Bauteile darf der Spieler noch setzen? */
@@ -267,11 +279,15 @@
       var card = builder.hand[index];
       if (this.isPowerUp(card)) {
         if (card === 'pu_remove') {
+          if (!this.build.deleting && !this.level.blocks.length) {
+            // Im leeren Level gibt es nichts abzureissen - nicht in den
+            // Zielmodus schicken, sonst kommt man nur schwer wieder heraus.
+            UDM.Audio.deny();
+            this.setBanner('Noch nichts zum Abreißen – die Abrissbirne bleibt für später', 2.4);
+            return;
+          }
           // Abrissbirne: erst zielen (R dreht), dann klicken.
-          this.build.deleting = !this.build.deleting;
-          UDM.Audio.select();
-          this.setBanner(this.build.deleting ? 'Zwei Felder abreißen – R dreht, Klick setzt an' : '', 2.4);
-          this.updateHud();
+          this.setDeleting(!this.build.deleting);
         } else {
           this.usePower(index, -1, -1, 0);
         }
@@ -431,7 +447,7 @@
       }
       if (!this.wreckTargets(this.build.tx, this.build.ty, this.build.wreckRot).length) {
         UDM.Audio.deny();
-        this.setBanner('Da liegt kein Bauteil', 1.2);
+        this.setBanner('Da liegt kein Bauteil – Rechtsklick/Esc bricht ab', 1.8);
         return;
       }
       this.usePower(index, this.build.tx, this.build.ty, this.build.wreckRot);
@@ -848,7 +864,8 @@
         var meta = this.cardMeta(id);
         var power = this.isPowerUp(id);
         var selected = power ? (id === 'pu_remove' && this.build.deleting) : (i === selectedIndex && !this.build.deleting);
-        html += '<button class="card' + (power ? ' power' : '') + (selected ? ' selected' : '') + '"' +
+        var idle = id === 'pu_remove' && !this.level.blocks.length;
+        html += '<button class="card' + (power ? ' power' : '') + (selected ? ' selected' : '') + (idle ? ' disabled' : '') + '"' +
           ' data-card="' + i + '" title="' + UDM.escapeHtml(meta.desc) + '">' +
           '<span class="ckey">' + (power ? '★' : '') + (i + 1) + '</span>' +
           '<canvas class="cicon" width="40" height="40" data-type="' + id + '"></canvas>' +
@@ -873,6 +890,10 @@
         '" data-card="-1" data-rotate="1" title="Drehen (Taste R)">' +
         '<span class="ckey">R</span>' + icon + '<span class="cname">' + label + '</span></button>';
 
+      if (this.build.deleting) {
+        html += '<button class="card cancel" data-card="-4" data-cancel="1" title="Abrissbirne wegstecken (Esc)">' +
+          '<span class="ckey">Esc</span><span class="rot-icon">✖</span><span class="cname">Abbrechen</span></button>';
+      }
       html += '<button class="card endturn" data-card="-3" data-endturn="1"' +
         ' title="Zug beenden, ohne weitere Bauteile zu setzen">' +
         '<span class="rot-icon">⏭</span><span class="cname">Zug beenden</span></button>';
@@ -1593,8 +1614,26 @@
 
     /* -------------------------------------------------------- Spielschleife */
 
+    /**
+     * Ein Frame. Der naechste wird zuerst angemeldet und Fehler werden
+     * abgefangen - ein einzelner Fehler darf nie das ganze Spiel einfrieren.
+     */
     loop: function (ts) {
       var self = this;
+      requestAnimationFrame(function (next) { self.loop(next); });
+      try {
+        this.frame(ts);
+      } catch (err) {
+        UDM.Input.endFrame();
+        if (!this.loggedErrors) { this.loggedErrors = {}; }
+        if (!this.loggedErrors[err.message]) {
+          this.loggedErrors[err.message] = true;
+          if (global.console) { global.console.error('Fehler im Spiel-Frame:', err); }
+        }
+      }
+    },
+
+    frame: function (ts) {
       var dt = Math.min(0.05, (ts - this.lastFrame) / 1000);
       this.lastFrame = ts;
       this.time += dt;
@@ -1636,7 +1675,6 @@
 
       this.renderFrame();
       UDM.Input.endFrame();
-      requestAnimationFrame(function (next) { self.loop(next); });
     },
 
     /**

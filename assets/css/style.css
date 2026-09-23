@@ -983,3 +983,7 @@ span.lobby-preview { font-size: 60px; }
 @keyframes banner-icon {
   50% { transform: scale(1.12) rotate(-6deg); }
 }
+
+/* Abrissbirne: Abbrechen-Knopf im Zielmodus */
+.card.cancel { border-color: rgba(255, 95, 109, 0.6); }
+.card.cancel .rot-icon { color: var(--bad); }

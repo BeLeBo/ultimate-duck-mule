@@ -212,7 +212,7 @@ Zug. Wer nicht mehr bauen will, beendet seinen Zug mit **Zug beenden**.
 | Schutzschild | Fängt einen tödlichen Treffer ab (Stacheln, Säge, Pendel, Pfeil) – gegen Abstürze hilft er nicht |
 | Turbo | Diese Runde deutlich schneller laufen |
 | Gleitschirm | Sprungtaste in der Luft halten und langsam hinabschweben |
-| Abrissbirne | Räumt zwei nebeneinanderliegende Felder – `R` dreht zwischen waagerecht und senkrecht, Klick setzt an |
+| Abrissbirne | Räumt zwei nebeneinanderliegende Felder – `R` dreht zwischen waagerecht und senkrecht, Klick setzt an, `Esc`/Rechtsklick/„Abbrechen“ steckt sie wieder weg. Solange nichts im Level liegt, bleibt sie ausgegraut |
 
 Doppelsprung, Schutzschild, Turbo und Gleitschirm wirken in der Partyphase direkt
 nach dem Zug, in dem sie gezogen wurden. In der Spielerleiste zeigt ein kleines Zeichen, wer gerade was
