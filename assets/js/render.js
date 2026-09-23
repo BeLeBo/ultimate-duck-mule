@@ -1476,28 +1476,39 @@
         var spanH = ((ghostSpec && ghostSpec.h) || 1) * TILE;
 
         if (build.deleting) {
-          // Abrissbirne: das ganze getroffene Bauteil rot durchgestrichen,
-          // auch wenn es mehrere Kacheln belegt.
-          var target = level.cell(build.tx, build.ty);
-          var rx = x;
-          var ry = y;
-          var rw = TILE;
-          var rh = TILE;
-          if (ok && target && target.kind === 'block') {
-            rx = target.tx * TILE;
-            ry = target.ty * TILE;
-            rw = (target.w || 1) * TILE;
-            rh = (target.h || 1) * TILE;
-          }
-          ctx.fillStyle = ok ? 'rgba(255,80,80,0.3)' : 'rgba(255,255,255,0.07)';
-          ctx.fillRect(rx, ry, rw, rh);
-          ctx.strokeStyle = ok ? 'rgba(255,90,90,0.95)' : 'rgba(255,255,255,0.3)';
+          // Abrissbirne: zwei Felder (waagerecht oder senkrecht). Jedes
+          // getroffene Bauteil wird komplett rot durchgestrichen.
+          var vertical = (build.rot || 0) % 2 === 1;
+          var tiles = vertical ? [[build.tx, build.ty], [build.tx, build.ty + 1]]
+            : [[build.tx, build.ty], [build.tx + 1, build.ty]];
+          var hits = [];
+          tiles.forEach(function (tile) {
+            var cell = level.cell(tile[0], tile[1]);
+            if (cell && cell.kind === 'block' && hits.indexOf(cell) < 0) { hits.push(cell); }
+          });
+          hits.forEach(function (cell) {
+            var rx = cell.tx * TILE;
+            var ry = cell.ty * TILE;
+            var rw = (cell.w || 1) * TILE;
+            var rh = (cell.h || 1) * TILE;
+            ctx.fillStyle = 'rgba(255,80,80,0.35)';
+            ctx.fillRect(rx, ry, rw, rh);
+            ctx.strokeStyle = 'rgba(255,90,90,0.95)';
+            ctx.lineWidth = 3;
+            ctx.beginPath();
+            ctx.moveTo(rx + 8, ry + 8); ctx.lineTo(rx + rw - 8, ry + rh - 8);
+            ctx.moveTo(rx + rw - 8, ry + 8); ctx.lineTo(rx + 8, ry + rh - 8);
+            ctx.stroke();
+          });
+          var fw = vertical ? TILE : TILE * 2;
+          var fh = vertical ? TILE * 2 : TILE;
+          ctx.fillStyle = ok ? 'rgba(255,80,80,0.12)' : 'rgba(255,255,255,0.07)';
+          ctx.fillRect(x, y, fw, fh);
+          ctx.setLineDash([6, 4]);
           ctx.lineWidth = 3;
-          ctx.strokeRect(rx + 1.5, ry + 1.5, rw - 3, rh - 3);
-          ctx.beginPath();
-          ctx.moveTo(rx + 8, ry + 8); ctx.lineTo(rx + rw - 8, ry + rh - 8);
-          ctx.moveTo(rx + rw - 8, ry + 8); ctx.lineTo(rx + 8, ry + rh - 8);
-          ctx.stroke();
+          ctx.strokeStyle = ok ? 'rgba(255,120,120,0.95)' : 'rgba(255,255,255,0.35)';
+          ctx.strokeRect(x + 1.5, y + 1.5, fw - 3, fh - 3);
+          ctx.setLineDash([]);
           ctx.lineWidth = 1;
         } else {
           if (ok && build.type) {

@@ -551,12 +551,12 @@ label { display: block; font-size: 13px; color: var(--muted); margin-bottom: 5px
 .lobby-label { font-size: 12px; color: var(--muted); margin: 0 0 5px; text-transform: none; }
 .lobby-label b { color: var(--text); }
 .lobby .lobby-list { margin-bottom: 12px; gap: 5px; }
-.lobby .lobby-list li { padding: 6px 10px; font-size: 14px; gap: 7px; min-width: 0; }
+.lobby .lobby-list li { padding: 5px 10px; font-size: 14px; gap: 7px; min-width: 0; }
 .lobby .lobby-list li.offline { opacity: 0.5; }
 .lobby .lobby-list .lname { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .lobby .lobby-list em { font-size: 11px; }
 .lobby .lobby-list small { font-size: 11px; }
-.chips { display: flex; flex-wrap: wrap; gap: 4px; margin-bottom: 4px; }
+.chips { display: flex; flex-wrap: wrap; gap: 4px; margin-bottom: 10px; }
 .chip {
   min-width: 32px;
   padding: 4px 6px;
@@ -584,3 +584,25 @@ span.lobby-preview { font-size: 60px; }
   .lobby-grid { grid-template-columns: 1fr; }
   .lobby-picker { grid-template-columns: repeat(auto-fill, minmax(90px, 1fr)); }
 }
+
+/* Die letzten Sekunden der Partyphase: gross und rot */
+#countdown.final {
+  color: #ff6b6b;
+  text-shadow: 0 6px 0 rgba(0, 0, 0, 0.35), 0 0 40px rgba(255, 80, 80, 0.85);
+}
+
+/* Farbwahl in der Lobby */
+.swatches { display: flex; flex-wrap: wrap; gap: 6px; margin-bottom: 10px; }
+.swatch {
+  width: 24px;
+  height: 24px;
+  min-width: 0;
+  padding: 0;
+  border-radius: 50%;
+  background: var(--c);
+  border: 3px solid rgba(0, 0, 0, 0.35);
+  box-shadow: none;
+}
+.swatch:hover:not([disabled]) { transform: scale(1.12); }
+.swatch.on, .swatch.on:hover { border-color: #fff; box-shadow: 0 0 0 2px var(--c); }
+.swatch[disabled] { opacity: 0.3; cursor: not-allowed; }

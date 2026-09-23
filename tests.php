@@ -124,6 +124,81 @@ Game::beginRound($room);
 $serverCheck('Power-ups gelten nur für die folgende Partyphase',
     $room['players'][$builder]['buffs'] === [], json_encode($room['players'][$builder]['buffs']));
 
+// Abrissbirne: zwei Felder, waagerecht oder senkrecht.
+$room = $makeRoom(['Anna', 'Bo']);
+Game::startMatch($room, $tokenOf($room, 'Anna'));
+$builder = Game::currentBuilder($room);
+$room['blocks'] = [
+    ['id' => 60, 'type' => 'stone', 'x' => 20, 'y' => 10, 'rot' => 0, 'ownerSlot' => 1],
+    ['id' => 61, 'type' => 'spike', 'x' => 21, 'y' => 10, 'rot' => 0, 'ownerSlot' => 1],
+    ['id' => 62, 'type' => 'stone', 'x' => 20, 'y' => 11, 'rot' => 0, 'ownerSlot' => 0],
+    ['id' => 63, 'type' => 'saw', 'x' => 25, 'y' => 10, 'rot' => 0, 'ownerSlot' => 0],
+];
+$room['players'][$builder]['hand'] = ['stone', 'pu_remove'];
+Game::usePower($room, $builder, 1, 20, 10, 0);
+$afterFlat = array_column($room['blocks'], 'id');
+$room['players'][$builder]['hand'] = ['stone', 'pu_remove'];
+$room['blocks'][] = ['id' => 64, 'type' => 'stone', 'x' => 25, 'y' => 11, 'rot' => 0, 'ownerSlot' => 0];
+Game::usePower($room, $builder, 1, 25, 10, 1);
+$serverCheck('Abrissbirne räumt zwei Felder – waagerecht oder senkrecht',
+    $afterFlat === [62, 63] && array_column($room['blocks'], 'id') === [62],
+    'nach waagerecht ' . json_encode($afterFlat) . ', nach senkrecht ' . json_encode(array_column($room['blocks'], 'id')));
+
+// Handkarten sieht nur ihr Besitzer - auch vom Bauenden sehen die anderen nichts.
+$other = $builder === $tokenOf($room, 'Anna') ? $tokenOf($room, 'Bo') : $tokenOf($room, 'Anna');
+$seenByOther = [];
+$seenBySelf = [];
+foreach (Game::publicState($room, $other)['players'] as $p) {
+    $seenByOther[$p['name']] = $p['hand'];
+}
+foreach (Game::publicState($room, $builder)['players'] as $p) {
+    $seenBySelf[$p['name']] = $p['hand'];
+}
+$builderName = $room['players'][$builder]['name'];
+$serverCheck('Handkarten sieht nur ihr Besitzer',
+    $seenByOther[$builderName] === [] && $seenBySelf[$builderName] === ['stone'],
+    'Zuschauer sieht ' . json_encode($seenByOther[$builderName]) . ', Bauender sieht ' . json_encode($seenBySelf[$builderName]));
+
+// Farbwahl in der Lobby: jede Farbe nur einmal.
+$room = $makeRoom(['Anna', 'Bo', 'Cem']);
+$defaults = array_map(static fn ($p) => $p['color'], array_values($room['players']));
+$taken = '';
+try {
+    Game::setColor($room, $tokenOf($room, 'Bo'), $defaults[0]);
+} catch (RuntimeException $e) {
+    $taken = $e->getMessage();
+}
+Game::setColor($room, $tokenOf($room, 'Bo'), '#b18cff');
+$state = Game::publicState($room, $tokenOf($room, 'Anna'));
+Game::startMatch($room, $tokenOf($room, 'Anna'));
+$late = '';
+try {
+    Game::setColor($room, $tokenOf($room, 'Cem'), '#ff9f43');
+} catch (RuntimeException $e) {
+    $late = $e->getMessage();
+}
+$serverCheck('Farbwahl: freie Farbe geht, belegte nicht, nur in der Lobby',
+    count(array_unique($defaults)) === 3 && strpos($taken, 'Anna') !== false
+    && $state['players'][1]['color'] === '#b18cff' && $late !== '',
+    'Standard ' . implode(' ', $defaults) . ' | ' . $taken . ' | ' . $late);
+
+// Partyzeit: der Server fuehrt die Uhr und beendet die Runde.
+$room = $makeRoom(['Anna', 'Bo']);
+Game::startMatch($room, $tokenOf($room, 'Anna'));
+Game::beginParty($room);
+$clock = Game::publicState($room, $tokenOf($room, 'Anna'))['party'];
+Game::reportResult($room, $tokenOf($room, 'Anna'), ['finished' => true, 'time' => 12.5, 'cause' => 'ziel']);
+$left = (float) $room['partyEnds'] - microtime(true);
+$room['partyEnds'] = microtime(true) - Game::PARTY_GRACE - 0.1;
+Game::tick($room);
+$boResult = $room['players'][$tokenOf($room, 'Bo')]['result'];
+$serverCheck('Partyzeit vom Server: 10 s nach dem ersten Zieleinlauf ist für alle Schluss',
+    abs($clock['remaining'] - (Game::PARTY_COUNTDOWN + Game::PARTY_LIMIT)) < 0.5
+    && $left <= Game::PARTY_AFTER_FIRST + 0.05 && $left > Game::PARTY_AFTER_FIRST - 1
+    && $room['phase'] === 'score' && ($boResult['cause'] ?? '') === 'zeit',
+    'Start ' . $clock['remaining'] . ' s, nach Zieleinlauf ' . round($left, 2) . ' s, danach Phase ' . $room['phase']
+    . ', Bo: ' . ($boResult['cause'] ?? '-'));
+
 // Bauteile verschwinden nur, wenn sie alle erwischt haben.
 $room = $makeRoom(['Anna', 'Bo', 'Cem']);
 Game::startMatch($room, $tokenOf($room, 'Anna'));

@@ -116,12 +116,14 @@ function heartbeat(array &$room, string $token, array $data): void
         ];
     }
 
-    // Der Bauende meldet, was er gerade vorhat - die anderen sehen zu.
+    // Der Bauende meldet, wo und was er gerade setzen will - die anderen
+    // sehen die Vorschau im Level, aber nicht seine Handkarten.
     $build = $data['build'] ?? null;
     if (is_array($build) && $room['phase'] === 'build' && Game::currentBuilder($room) === $token) {
+        $type = (string) ($build['type'] ?? '');
         $room['buildView'] = [
             'slot' => (int) $room['players'][$token]['slot'],
-            'card' => max(-1, min(8, (int) ($build['card'] ?? -1))),
+            'type' => Cards::exists($type) && in_array($type, $room['players'][$token]['hand'], true) ? $type : null,
             'rot' => (((int) ($build['rot'] ?? 0)) % 4 + 4) % 4,
             // Zielt gerade mit der Abrissbirne.
             'deleting' => (bool) ($build['deleting'] ?? false),
@@ -244,7 +246,8 @@ try {
                         $token,
                         int_field($data, 'card', -1),
                         int_field($data, 'x', -1),
-                        int_field($data, 'y', -1)
+                        int_field($data, 'y', -1),
+                        int_field($data, 'rot', 0)
                     );
                 } catch (Throwable $e) {
                     $error = $e->getMessage();
@@ -270,6 +273,25 @@ try {
                         str_field($data, 'level'),
                         int_field($data, 'rounds', Game::DEFAULT_ROUNDS)
                     );
+                } catch (Throwable $e) {
+                    $error = $e->getMessage();
+                }
+
+                return $room;
+            });
+            if ($error !== null) {
+                respond(['ok' => false, 'error' => $error, 'state' => Game::publicState($room, $token)], 409);
+            }
+            respond(['ok' => true, 'state' => Game::publicState($room, $token)]);
+            // no break
+
+        case 'color':
+            [$code, $token] = credentials($data);
+            $error = null;
+            $room = Rooms::mutate($code, function (array $room) use ($token, $data, &$error): array {
+                heartbeat($room, $token, $data);
+                try {
+                    Game::setColor($room, $token, str_field($data, 'color'));
                 } catch (Throwable $e) {
                     $error = $e->getMessage();
                 }

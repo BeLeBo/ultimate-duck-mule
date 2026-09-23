@@ -57,13 +57,33 @@
 
   /* ------------------------------------------------------------ Spieler */
 
+  /** Standardfarben der vier Plaetze (wie Game::COLORS in PHP). */
   UDM.SLOT_COLORS = ['#ffcb3d', '#3fc7f0', '#ff6f91', '#7ed957'];
-  UDM.SLOT_DARK = ['#b8860b', '#1b7fa3', '#b03a5c', '#3f8f2c'];
+
+  /**
+   * In der Lobby gewaehlte Farben je Platz. Der Spielcontroller fuellt das
+   * aus dem Serverzustand; alles, was per slotColor() faerbt (Spielerleiste,
+   * Besitzerpunkte an Bauteilen, Tabellen), folgt damit automatisch.
+   */
+  UDM.playerColors = {};
 
   /** Farbe eines Spielerplatzes - robust auch bei unerwarteten Werten. */
   UDM.slotColor = function (slot) {
+    if (UDM.playerColors[slot]) { return UDM.playerColors[slot]; }
     var n = UDM.SLOT_COLORS.length;
     return UDM.SLOT_COLORS[((slot % n) + n) % n];
+  };
+
+  /** Dunklere Variante einer Hex-Farbe (Beine, Umrisse). */
+  UDM.darken = function (hex, factor) {
+    var f = factor === undefined ? 0.62 : factor;
+    var m = /^#?([0-9a-f]{6})$/i.exec(hex || '');
+    if (!m) { return '#555555'; }
+    var n = parseInt(m[1], 16);
+    var r = Math.round(((n >> 16) & 255) * f);
+    var g = Math.round(((n >> 8) & 255) * f);
+    var b = Math.round((n & 255) * f);
+    return '#' + ((1 << 24) + (r << 16) + (g << 8) + b).toString(16).slice(1);
   };
 
   UDM.CHARACTERS = {

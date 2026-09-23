@@ -10,8 +10,8 @@
     this.slot = slot;
     this.name = (info && info.name) || ('Spieler ' + (slot + 1));
     this.char = (info && info.char) || 'duck';
-    this.color = UDM.SLOT_COLORS[slot % UDM.SLOT_COLORS.length];
-    this.dark = UDM.SLOT_DARK[slot % UDM.SLOT_DARK.length];
+    this.color = (info && info.color) || UDM.slotColor(slot);
+    this.dark = UDM.darken(this.color);
     this.w = P.playerW;
     this.h = P.playerH;
     this.remote = false;

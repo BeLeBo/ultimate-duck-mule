@@ -7,58 +7,36 @@ require_once __DIR__ . '/lib/Game.php';
 require_once __DIR__ . '/lib/Rooms.php';
 require_once __DIR__ . '/lib/View.php';
 
-$mode = ($_GET['mode'] ?? 'local') === 'online' ? 'online' : 'local';
+// Es gibt nur noch den Online-Modus: ohne gueltigen Raum zurueck ins Menue.
+$code = strtoupper(trim((string) ($_GET['code'] ?? '')));
+if (!Rooms::isValidCode($code) || !Rooms::exists($code)) {
+    header('Location: index.php?hinweis=gone');
+    exit;
+}
 
 $config = [
-    'mode' => $mode,
+    'mode' => 'online',
     'tile' => Levels::TILE,
     'cols' => Levels::COLS,
     'rows' => Levels::ROWS,
     'cards' => Cards::CATALOG,
     'powerups' => Cards::POWERUPS,
     'powerupChance' => Cards::POWERUP_CHANCE,
+    'colors' => Game::COLORS,
     'levels' => Levels::all(),
     'endpoint' => 'api/index.php',
     'handSize' => Game::HAND_SIZE,
     'rounds' => Game::DEFAULT_ROUNDS,
-    'levelId' => null,
-    'local' => null,
-    'online' => null,
-];
-
-if ($mode === 'online') {
-    $code = strtoupper(trim((string) ($_GET['code'] ?? '')));
-    if (!Rooms::isValidCode($code) || !Rooms::exists($code)) {
-        header('Location: index.php?hinweis=gone');
-        exit;
-    }
-    $config['online'] = [
+    'online' => [
         'code' => $code,
         // Das Token liegt normalerweise im sessionStorage; der URL-Parameter
         // ist nur der Notweg fuer Browser ohne sessionStorage.
         'token' => preg_match('/^[a-f0-9]{32}$/', (string) ($_GET['token'] ?? ''))
             ? (string) $_GET['token']
             : null,
-    ];
-    $title = 'Raum ' . $code . ' – Ultimate Duck Mule';
-} else {
-    $count = (int) ($_GET['players'] ?? 3);
-    $count = max(2, min(Game::MAX_PLAYERS, $count));
-
-    $players = [];
-    for ($i = 0; $i < $count; $i++) {
-        $players[] = [
-            'name' => Game::cleanName((string) ($_GET['n' . $i] ?? ''), $i),
-            'char' => Game::cleanChar((string) ($_GET['c' . $i] ?? ''), $i),
-        ];
-    }
-
-    $levelId = (string) ($_GET['level'] ?? '');
-    $config['levelId'] = Levels::byId($levelId) !== null ? $levelId : null;
-    $config['rounds'] = Game::clampRounds((int) ($_GET['rounds'] ?? Game::DEFAULT_ROUNDS));
-    $config['local'] = ['players' => $players];
-    $title = $count . ' Spieler – Ultimate Duck Mule';
-}
+    ],
+];
+$title = 'Raum ' . $code . ' – Ultimate Duck Mule';
 
 $configJson = json_encode($config, JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES | JSON_HEX_TAG | JSON_HEX_AMP);
 ?>
@@ -77,7 +55,7 @@ $configJson = json_encode($config, JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASH
   <header id="topbar">
     <div id="round-info">
       <span id="round-label">Runde 1</span>
-      <span id="target-label"><?= (int) $config['rounds'] ?> Runden</span>
+      <span id="target-label">Raum <?= htmlspecialchars($code, ENT_QUOTES) ?></span>
       <span id="level-label">&nbsp;</span>
     </div>
     <div id="players"></div>
@@ -110,7 +88,6 @@ $configJson = json_encode($config, JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASH
 (function () {
   'use strict';
   var cfg = window.UDM_CONFIG;
-  if (cfg.mode !== 'online') { return; }
 
   // Token aus dem sessionStorage holen, falls es nicht in der URL steht.
   if (!cfg.online.token) {
@@ -123,7 +100,7 @@ $configJson = json_encode($config, JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASH
     try {
       sessionStorage.setItem('udm:' + cfg.online.code, cfg.online.token);
       // Token nicht in der Adressleiste stehen lassen.
-      history.replaceState(null, '', 'game.php?mode=online&code=' + encodeURIComponent(cfg.online.code));
+      history.replaceState(null, '', 'game.php?code=' + encodeURIComponent(cfg.online.code));
     } catch (e) { /* egal */ }
   }
 

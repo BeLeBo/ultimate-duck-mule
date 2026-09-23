@@ -1,24 +1,10 @@
-/* Tastatur und Maus. Bis zu drei Tastenbelegungen teilen sich eine Tastatur. */
+/* Tastatur und Maus. */
 (function (global) {
   'use strict';
 
   var UDM = global.UDM;
 
-  UDM.LAYOUTS = [
-    { left: 'KeyA', right: 'KeyD', jump: 'KeyW', down: 'KeyS', label: 'A D / W / S' },
-    { left: 'ArrowLeft', right: 'ArrowRight', jump: 'ArrowUp', down: 'ArrowDown', label: '← → / ↑ / ↓' },
-    { left: 'KeyJ', right: 'KeyL', jump: 'KeyI', down: 'KeyK', label: 'J L / I / K' },
-    // Vierter Spieler: F/H/T/G - oder der Ziffernblock, wer einen hat.
-    {
-      left: ['KeyF', 'Numpad4'],
-      right: ['KeyH', 'Numpad6'],
-      jump: ['KeyT', 'Numpad8'],
-      down: ['KeyG', 'Numpad5'],
-      label: 'F H / T / G oder Ziffernblock'
-    }
-  ];
-
-  /* Im Online-Modus steuert man nur eine Figur - dann zaehlen beide Belegungen. */
+  /* Man steuert genau eine Figur - A/D und die Pfeiltasten gehen beide. */
   var SOLO_LAYOUT = {
     left: ['KeyA', 'ArrowLeft'],
     right: ['KeyD', 'ArrowRight'],

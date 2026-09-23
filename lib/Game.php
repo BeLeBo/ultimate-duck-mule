@@ -30,7 +30,17 @@ final class Game
     public const MIN_ROUNDS = 3;
     public const MAX_ROUNDS = 30;
 
-    /** Nach dieser Zeit wird eine haengende Partyphase notfalls beendet (Sek.). */
+    /**
+     * Zeitplan der Partyphase (Sek.). Der Server fuehrt die Uhr, damit alle
+     * denselben Zeitbalken sehen und die Runde fuer alle gleichzeitig endet.
+     */
+    public const PARTY_COUNTDOWN = 2.2;
+    public const PARTY_LIMIT = 60;
+    /** Restzeit, sobald die erste Figur im Ziel ist. */
+    public const PARTY_AFTER_FIRST = 10;
+    /** So lange wartet der Server nach Ablauf auf die letzten Meldungen. */
+    public const PARTY_GRACE = 2.0;
+    /** Notbremse fuer Raeume ohne Zeitplan (aeltere Versionen). */
     public const PARTY_HARD_LIMIT = 100;
 
     /** Nach dieser Zeit geht es aus der Punkteansicht automatisch weiter (Sek.). */
@@ -48,6 +58,14 @@ final class Game
 
     /** @var list<string> */
     public const CHARACTERS = ['duck', 'mule', 'racoon', 'frog'];
+
+    /**
+     * Waehlbare Spielerfarben. Die ersten vier sind die Standardfarben der
+     * Plaetze; jede Farbe gibt es pro Raum nur einmal.
+     *
+     * @var list<string>
+     */
+    public const COLORS = ['#ffcb3d', '#3fc7f0', '#ff6f91', '#7ed957', '#ff9f43', '#b18cff', '#ff5a5a', '#2fe0c0'];
 
     /** @return array<string, mixed> */
     public static function newRoom(string $code, int $rounds, ?string $levelId): array
@@ -100,6 +118,7 @@ final class Game
             'slot' => $slot,
             'name' => self::cleanName($name, $slot),
             'char' => self::cleanChar($char, $slot),
+            'color' => self::freeColor($room, $slot),
             'score' => 0,
             'hand' => [],
             'places' => 0,
@@ -120,6 +139,67 @@ final class Game
         self::log($room, self::nameOf($room, $token) . ' ist dem Raum beigetreten.');
 
         return $token;
+    }
+
+    /**
+     * Erste freie Farbe - bevorzugt die Standardfarbe des Platzes.
+     *
+     * @param array<string, mixed> $room
+     */
+    private static function freeColor(array $room, int $slot): string
+    {
+        $taken = array_column($room['players'], 'color');
+        $preferred = self::COLORS[$slot % count(self::COLORS)];
+        if (!in_array($preferred, $taken, true)) {
+            return $preferred;
+        }
+        foreach (self::COLORS as $color) {
+            if (!in_array($color, $taken, true)) {
+                return $color;
+            }
+        }
+
+        return $preferred;
+    }
+
+    /**
+     * Farbe in der Lobby waehlen - jede Farbe nur einmal pro Raum.
+     *
+     * @param array<string, mixed> $room
+     */
+    public static function setColor(array &$room, string $token, string $color): void
+    {
+        if (!isset($room['players'][$token])) {
+            throw new RuntimeException('Du bist nicht in diesem Raum.');
+        }
+        if ($room['phase'] !== 'lobby') {
+            throw new RuntimeException('Die Farbe lässt sich nur in der Lobby ändern.');
+        }
+        $color = strtolower($color);
+        if (!in_array($color, self::COLORS, true)) {
+            throw new RuntimeException('Diese Farbe gibt es nicht.');
+        }
+        foreach ($room['players'] as $other => $player) {
+            if ($other !== $token && ($player['color'] ?? '') === $color) {
+                throw new RuntimeException('Diese Farbe hat schon ' . $player['name'] . '.');
+            }
+        }
+        $room['players'][$token]['color'] = $color;
+        self::touch($room);
+    }
+
+    /**
+     * Farbe eines Spielers - Raeume aus aelteren Versionen kennen noch keine.
+     *
+     * @param array<string, mixed> $player
+     */
+    public static function colorOf(array $player): string
+    {
+        $color = (string) ($player['color'] ?? '');
+
+        return in_array($color, self::COLORS, true)
+            ? $color
+            : self::COLORS[(int) $player['slot'] % count(self::COLORS)];
     }
 
     /** @param array<string, mixed> $room */
@@ -372,13 +452,14 @@ final class Game
     }
 
     /**
-     * Setzt ein Power-up aus der Hand ein. Die Abrissbirne braucht ein Ziel
-     * (x/y = Kachel des Bauteils), alle anderen wirken in der folgenden
-     * Partyphase auf die eigene Figur. Ein Power-up kostet keinen Bauzug.
+     * Setzt ein Power-up aus der Hand ein. Die Abrissbirne braucht ein Ziel:
+     * zwei Felder ab (x, y), waagerecht (rot gerade) oder senkrecht (rot
+     * ungerade). Alle anderen wirken in der folgenden Partyphase auf die
+     * eigene Figur. Ein Power-up kostet keinen Bauzug.
      *
      * @param array<string, mixed> $room
      */
-    public static function usePower(array &$room, string $token, int $cardIndex, int $x, int $y): void
+    public static function usePower(array &$room, string $token, int $cardIndex, int $x, int $y, int $rot = 0): void
     {
         if ($room['phase'] !== 'build') {
             throw new RuntimeException('Gerade ist keine Bauphase.');
@@ -393,8 +474,12 @@ final class Game
         }
 
         if ($card === 'pu_remove') {
-            $removed = self::removeBlockAt($room, $x, $y);
-            $message = 'reißt ' . (Cards::CATALOG[$removed['type']]['name'] ?? 'ein Bauteil') . ' ab';
+            $removed = self::removeBlocksAt($room, self::wreckTiles($x, $y, $rot));
+            $names = array_map(
+                static fn (array $b): string => Cards::CATALOG[$b['type']]['name'] ?? 'ein Bauteil',
+                $removed
+            );
+            $message = 'reißt ' . implode(' und ', $names) . ' ab';
         } else {
             $buffs = $room['players'][$token]['buffs'] ?? [];
             if (!in_array($card, $buffs, true)) {
@@ -411,25 +496,49 @@ final class Game
     }
 
     /**
-     * Entfernt das Bauteil, das die Kachel (x, y) belegt - eigenes oder
-     * fremdes. Es hinterlaesst einen Grabstein.
+     * Die zwei Felder der Abrissbirne: ab (x, y) nach rechts oder nach unten.
+     *
+     * @return list<array{0:int, 1:int}>
+     */
+    public static function wreckTiles(int $x, int $y, int $rot): array
+    {
+        return $rot % 2 === 0 ? [[$x, $y], [$x + 1, $y]] : [[$x, $y], [$x, $y + 1]];
+    }
+
+    /**
+     * Entfernt alle Bauteile, die eines der Felder belegen - eigene wie
+     * fremde. Jedes hinterlaesst einen Grabstein.
      *
      * @param array<string, mixed> $room
-     * @return array<string, mixed> das entfernte Bauteil
+     * @param list<array{0:int, 1:int}> $tiles
+     * @return list<array<string, mixed>> die entfernten Bauteile
      */
-    private static function removeBlockAt(array &$room, int $x, int $y): array
+    private static function removeBlocksAt(array &$room, array $tiles): array
     {
-        $id = self::occupiedTiles($room)[$x . ',' . $y] ?? null;
-        foreach ($room['blocks'] as $i => $block) {
-            if ($id !== null && (int) $block['id'] === $id) {
-                array_splice($room['blocks'], $i, 1);
-                self::addGrave($room, $block);
-
-                return $block;
+        $taken = self::occupiedTiles($room);
+        $ids = [];
+        foreach ($tiles as [$x, $y]) {
+            if (isset($taken[$x . ',' . $y])) {
+                $ids[$taken[$x . ',' . $y]] = true;
             }
         }
+        if ($ids === []) {
+            throw new RuntimeException('Da liegt kein Bauteil.');
+        }
 
-        throw new RuntimeException('Da liegt kein Bauteil.');
+        $removed = [];
+        $kept = [];
+        foreach ($room['blocks'] as $block) {
+            if (isset($ids[(int) $block['id']])) {
+                $removed[] = $block;
+                self::addGrave($room, $block);
+            } else {
+                $kept[] = $block;
+            }
+        }
+        $room['blocks'] = $kept;
+
+        return $removed;
     }
 
     /** @param array<string, mixed> $room */
@@ -500,6 +609,8 @@ final class Game
     {
         $room['phase'] = 'party';
         $room['phaseStarted'] = time();
+        $room['partyStart'] = microtime(true);
+        $room['partyEnds'] = $room['partyStart'] + self::PARTY_COUNTDOWN + self::PARTY_LIMIT;
         foreach ($room['players'] as &$player) {
             $player['result'] = null;
             $player['ready'] = false;
@@ -545,6 +656,11 @@ final class Game
             'assistBlock' => $blockId($result['assistBlock'] ?? null),
             'cause' => self::cleanCause((string) ($result['cause'] ?? '')),
         ];
+
+        // Die erste Figur im Ziel verkuerzt die Restzeit fuer alle.
+        if ($room['players'][$token]['result']['finished'] && isset($room['partyEnds'])) {
+            $room['partyEnds'] = min((float) $room['partyEnds'], microtime(true) + self::PARTY_AFTER_FIRST);
+        }
 
         self::maybeFinishRound($room);
         self::touch($room);
@@ -867,7 +983,11 @@ final class Game
                     self::touch($room);
                 }
             }
-            if ($now - (int) $room['phaseStarted'] > self::PARTY_HARD_LIMIT) {
+            // Zeit abgelaufen: wer sich bis dahin nicht gemeldet hat, ist raus.
+            $deadline = isset($room['partyEnds'])
+                ? (float) $room['partyEnds'] + self::PARTY_GRACE
+                : (float) $room['phaseStarted'] + self::PARTY_HARD_LIMIT;
+            if (microtime(true) > $deadline) {
                 foreach ($room['order'] as $token) {
                     if (($room['players'][$token]['result'] ?? null) === null) {
                         $room['players'][$token]['result'] = [
@@ -1057,12 +1177,11 @@ final class Game
                 continue;
             }
             $isYou = $viewer !== null && $token === $viewer;
-            // Die Hand des Bauenden sehen alle - sie sollen zuschauen koennen.
-            $showHand = $isYou || ($room['phase'] === 'build' && $token === self::currentBuilder($room));
             $players[] = [
                 'slot' => (int) $player['slot'],
                 'name' => $player['name'],
                 'char' => $player['char'],
+                'color' => self::colorOf($player),
                 'score' => (int) $player['score'],
                 'connected' => self::isConnected($player),
                 'placed' => (bool) $player['placed'],
@@ -1070,7 +1189,9 @@ final class Game
                 'you' => $isYou,
                 'host' => $token === $room['hostToken'],
                 'handSize' => count($player['hand']),
-                'hand' => $showHand ? array_values($player['hand']) : [],
+                // Handkarten sieht nur ihr Besitzer - die anderen sehen beim
+                // Bauen nur, wo und wie etwas gesetzt wird.
+                'hand' => $isYou ? array_values($player['hand']) : [],
                 'places' => (int) ($player['places'] ?? 0),
                 'buffs' => array_values($player['buffs'] ?? []),
                 'pos' => $player['pos'],
@@ -1105,11 +1226,32 @@ final class Game
                 self::activeGraves($room)
             ),
             'buildView' => $room['phase'] === 'build' ? ($room['buildView'] ?? null) : null,
+            'party' => $room['phase'] === 'party' ? self::partyClock($room) : null,
             'lastRound' => $room['lastRound'],
             'winner' => $room['winner'],
             'version' => (int) $room['version'],
             'phaseElapsed' => max(0, time() - (int) $room['phaseStarted']),
             'log' => array_slice($room['log'], -8),
+        ];
+    }
+
+    /**
+     * Uhr der Partyphase: wie weit sie ist und wie viel Zeit bleibt.
+     *
+     * @param array<string, mixed> $room
+     * @return array{countdown:float, limit:int, elapsed:float, remaining:float}
+     */
+    public static function partyClock(array $room): array
+    {
+        $now = microtime(true);
+        $start = (float) ($room['partyStart'] ?? $room['phaseStarted']);
+        $ends = (float) ($room['partyEnds'] ?? $start + self::PARTY_COUNTDOWN + self::PARTY_LIMIT);
+
+        return [
+            'countdown' => self::PARTY_COUNTDOWN,
+            'limit' => self::PARTY_LIMIT,
+            'elapsed' => round(max(0.0, $now - $start), 3),
+            'remaining' => round(max(0.0, $ends - $now), 3),
         ];
     }
 

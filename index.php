@@ -20,21 +20,13 @@ $levels = Levels::all();
 $characters = Game::CHARACTERS;
 $charLabels = ['duck' => 'Ente', 'mule' => 'Maultier', 'racoon' => 'Waschbär', 'frog' => 'Frosch'];
 
-// Vorbelegung - etwa wenn man nach einem Match mit "Nochmal spielen"
-// hierher zurueckkommt und nur ein paar Einstellungen aendern will.
+// Vorbelegung ueber die Adresse, etwa ?tab=rules oder ?level=vulkan.
 $preLevel = (string) ($_GET['level'] ?? '');
 $pre = [
-    'tab' => in_array($_GET['tab'] ?? '', ['local', 'online', 'rules'], true) ? $_GET['tab'] : 'local',
-    'players' => max(2, min(Game::MAX_PLAYERS, (int) ($_GET['players'] ?? 3))),
+    'tab' => in_array($_GET['tab'] ?? '', ['online', 'rules'], true) ? $_GET['tab'] : 'online',
     'level' => Levels::byId($preLevel) !== null ? $preLevel : '',
     'rounds' => Game::clampRounds((int) ($_GET['rounds'] ?? Game::DEFAULT_ROUNDS)),
-    'names' => [],
-    'chars' => [],
 ];
-for ($i = 0; $i < Game::MAX_PLAYERS; $i++) {
-    $pre['names'][$i] = Game::cleanName((string) ($_GET['n' . $i] ?? ''), $i);
-    $pre['chars'][$i] = Game::cleanChar((string) ($_GET['c' . $i] ?? ''), $i);
-}
 
 /** Auswahlliste fuer die Matchlaenge in Runden. */
 function roundsSelect(string $id, string $name, int $selected): void
@@ -103,66 +95,15 @@ function levelPicker(string $inputId, string $inputName, string $selected, array
   <?php endif; ?>
 
   <nav class="tabs" id="tabs">
-    <button data-tab="local"<?= $pre['tab'] === 'local' ? ' class="on"' : '' ?>>Lokal an einer Tastatur</button>
-    <button data-tab="online"<?= $pre['tab'] === 'online' ? ' class="on"' : '' ?>>Online mit Raumcode</button>
+    <button data-tab="online"<?= $pre['tab'] === 'online' ? ' class="on"' : '' ?>>Spielen</button>
     <button data-tab="rules"<?= $pre['tab'] === 'rules' ? ' class="on"' : '' ?>>Regeln &amp; Bauteile</button>
   </nav>
-
-  <!-- ------------------------------------------------------------ lokal -->
-  <section class="panel<?= $pre['tab'] === 'local' ? '' : ' hidden' ?>" id="tab-local">
-    <h2>Lokales Spiel</h2>
-    <p class="muted">2 bis 4 Spieler an einer Tastatur. Jeder hat seinen eigenen Tastenblock.</p>
-
-    <form method="get" action="game.php" id="local-form">
-      <input type="hidden" name="mode" value="local">
-
-      <div class="row" style="margin-bottom:14px">
-        <div>
-          <label for="local-count">Anzahl Spieler</label>
-          <select name="players" id="local-count">
-            <?php for ($n = 2; $n <= Game::MAX_PLAYERS; $n++): ?>
-              <option value="<?= $n ?>"<?= $n === $pre['players'] ? ' selected' : '' ?>><?= $n ?> Spieler</option>
-            <?php endfor; ?>
-          </select>
-        </div>
-        <div>
-          <label for="local-rounds">Spiellänge</label>
-          <?php roundsSelect('local-rounds', 'rounds', $pre['rounds']); ?>
-        </div>
-      </div>
-
-      <label>Welt</label>
-      <?php levelPicker('local-level', 'level', $pre['level'], $levels); ?>
-
-      <?php for ($i = 0; $i < Game::MAX_PLAYERS; $i++): ?>
-        <div class="seat" data-seat="<?= $i ?>">
-          <canvas class="seat-canvas" width="54" height="54" data-slot="<?= $i ?>"></canvas>
-          <div>
-            <label for="name<?= $i ?>">Spieler <?= $i + 1 ?></label>
-            <input type="text" id="name<?= $i ?>" name="n<?= $i ?>" maxlength="14"
-                   value="<?= htmlspecialchars($pre['names'][$i], ENT_QUOTES) ?>" autocomplete="off">
-            <div class="chars" data-charpick="<?= $i ?>">
-              <?php $ci = 0; foreach ($characters as $char): ?>
-                <button type="button" data-char="<?= htmlspecialchars($char, ENT_QUOTES) ?>"
-                        class="<?= $char === $pre['chars'][$i] ? 'on' : '' ?>">
-                  <?= htmlspecialchars($charLabels[$char] ?? $char, ENT_QUOTES) ?>
-                </button>
-              <?php $ci++; endforeach; ?>
-            </div>
-            <input type="hidden" name="c<?= $i ?>" value="<?= htmlspecialchars($pre['chars'][$i], ENT_QUOTES) ?>">
-            <div class="keys" data-keys="<?= $i ?>"></div>
-          </div>
-        </div>
-      <?php endfor; ?>
-
-      <button type="submit" class="big">Los geht&rsquo;s</button>
-    </form>
-  </section>
 
   <!-- ----------------------------------------------------------- online -->
   <section class="panel<?= $pre['tab'] === 'online' ? '' : ' hidden' ?>" id="tab-online">
     <h2>Online spielen</h2>
-    <p class="muted">Ein Spieler erstellt einen Raum und gibt den Code weiter &ndash; bis zu 4 Spieler.</p>
+    <p class="muted">Ein Spieler erstellt einen Raum und gibt den Code weiter &ndash; bis zu 4 Spieler.
+      Jeder spielt an seinem eigenen Rechner; Farbe und Einstellungen w&auml;hlt ihr danach in der Lobby.</p>
 
     <div class="seat" style="margin-bottom:16px">
       <canvas class="seat-canvas" width="54" height="54" data-slot="0" id="online-avatar"></canvas>
@@ -293,7 +234,7 @@ function levelPicker(string $inputId, string $inputName, string $selected, array
   tabs.addEventListener('click', function (e) {
     var name = e.target.getAttribute && e.target.getAttribute('data-tab');
     if (!name) { return; }
-    ['local', 'online', 'rules'].forEach(function (key) {
+    ['online', 'rules'].forEach(function (key) {
       document.getElementById('tab-' + key).classList.toggle('hidden', key !== name);
     });
     Array.prototype.forEach.call(tabs.children, function (button) {
@@ -307,7 +248,7 @@ function levelPicker(string $inputId, string $inputName, string $selected, array
       x: 16, y: 16, w: UDM.PHYS.playerW, h: UDM.PHYS.playerH,
       slot: slot, char: charId, face: 1, anim: 'idle', animTime: 0,
       squash: 1, alive: true, finished: false, deathTimer: 0, name: '',
-      color: UDM.slotColor(slot), dark: UDM.SLOT_DARK[slot % UDM.SLOT_DARK.length]
+      color: UDM.slotColor(slot), dark: UDM.darken(UDM.slotColor(slot))
     };
   }
 
@@ -321,9 +262,6 @@ function levelPicker(string $inputId, string $inputName, string $selected, array
     UDM.Render.drawPlayer(ctx, p, time, false);
   }
 
-  // Nur die Sitzplaetze des lokalen Spiels - der Online-Block nutzt dieselbe
-  // Optik, hat aber kein data-seat und darf hier nicht mitlaufen.
-  var seats = Array.prototype.slice.call(document.querySelectorAll('.seat[data-seat]'));
   var mascots = [document.getElementById('mascot0'), document.getElementById('mascot1')];
 
   function currentChar(index) {
@@ -332,10 +270,6 @@ function levelPicker(string $inputId, string $inputName, string $selected, array
   }
 
   function repaintSeats(time) {
-    seats.forEach(function (seat) {
-      var index = parseInt(seat.getAttribute('data-seat'), 10);
-      paint(seat.querySelector('canvas'), index, currentChar(index), time);
-    });
     paint(mascots[0], 0, 'duck', time);
     paint(mascots[1], 1, 'mule', time + 1);
 
@@ -350,32 +284,9 @@ function levelPicker(string $inputId, string $inputName, string $selected, array
       if (!button) { return; }
       Array.prototype.forEach.call(group.children, function (child) { child.classList.remove('on'); });
       button.classList.add('on');
-      var key = group.getAttribute('data-charpick');
-      var hidden = document.querySelector('input[name="c' + key + '"]');
-      if (hidden) { hidden.value = button.getAttribute('data-char'); }
       repaintSeats(performance.now() / 1000);
     });
   });
-
-  /* --------------------------------------------- Sitzplaetze / Tasten */
-  var countSelect = document.getElementById('local-count');
-  function syncSeats() {
-    var count = parseInt(countSelect.value, 10);
-    seats.forEach(function (seat) {
-      var index = parseInt(seat.getAttribute('data-seat'), 10);
-      var off = index >= count;
-      seat.classList.toggle('off', off);
-      seat.querySelectorAll('input, button').forEach(function (field) { field.disabled = off; });
-      var keys = seat.querySelector('[data-keys]');
-      var layout = ['A / D laufen, W springen, S runter',
-        '← / → laufen, ↑ springen, ↓ runter',
-        'J / L laufen, I springen, K runter',
-        'F / H laufen, T springen, G runter (oder Ziffernblock 4 6 8 5)'][index];
-      keys.textContent = off ? 'nicht dabei' : layout;
-    });
-  }
-  countSelect.addEventListener('change', syncSeats);
-  syncSeats();
 
   /* -------------------------------------------------- Bauteil-Symbole */
   document.querySelectorAll('canvas.cicon').forEach(function (canvas) {
@@ -417,11 +328,11 @@ function levelPicker(string $inputId, string $inputName, string $selected, array
       sessionStorage.setItem('udm:' + data.code, data.token);
     } catch (e) {
       // Ohne sessionStorage geht es notfalls auch ueber die URL.
-      window.location.href = 'game.php?mode=online&code=' + encodeURIComponent(data.code) +
+      window.location.href = 'game.php?code=' + encodeURIComponent(data.code) +
         '&token=' + encodeURIComponent(data.token);
       return;
     }
-    window.location.href = 'game.php?mode=online&code=' + encodeURIComponent(data.code);
+    window.location.href = 'game.php?code=' + encodeURIComponent(data.code);
   }
 
   document.getElementById('btn-create').addEventListener('click', function () {

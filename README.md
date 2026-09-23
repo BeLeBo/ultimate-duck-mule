@@ -19,10 +19,11 @@ Jede Runde besteht aus zwei Phasen:
    Selbst löschen kann man nichts – das geht nur mit dem Power-up *Abrissbirne*.
    Die Vorschau am Mauszeiger zeigt vorher, was das Bauteil anrichtet.
    **Wer vorne liegt, baut zuerst** – wer hinten liegt, sieht alles und hat das
-   letzte Wort; Gleichstand entscheidet das Los. Alle anderen schauen dem Bauenden
-   live zu: Mauszeiger, Handkarten, gewählte Karte und Drehung.
+   letzte Wort; Gleichstand entscheidet das Los. Die anderen sehen im Level, wo
+   und wie gebaut wird – die Handkarten des Bauenden bleiben verdeckt.
 2. **Partyphase** – Alle starten gleichzeitig und versuchen, die Fahne zu erreichen.
-   Wer stirbt, schaut den Rest der Runde zu; wer feststeckt, kann aufgeben.
+   Nach 60 Sekunden ist Schluss, sobald jemand im Ziel ist, bleiben noch 10. Wer
+   stirbt, schaut den Rest der Runde zu; wer feststeckt, kann aufgeben.
 
 **Bauteile bleiben liegen:** Ein Bauteil verschwindet nur, wenn es in einer Runde
 **alle Spieler** erwischt hat – eine Falle, an der jeder scheitert, räumt sich
@@ -60,9 +61,8 @@ bekommen **beide** einen Punkt – der Fallensteller und der Nachhelfer.
 
 Ein Match dauert eine **feste Zahl an Runden** (wählbar 3–20, Standard 8). Wer nach
 der letzten Runde die meisten Punkte hat, gewinnt – bei Gleichstand teilen sich die
-Führenden den Sieg. **Nochmal spielen** führt zurück zu den Einstellungen: lokal ins
-Menü mit allen Angaben vorausgefüllt, online in die Lobby, wo der Gastgeber Welt und
-Rundenzahl neu wählt und weitere Mitspieler noch beitreten können.
+Führenden den Sieg. **Nochmal spielen** führt zurück in die Lobby, wo der Gastgeber
+Welt und Rundenzahl neu wählt und weitere Mitspieler noch beitreten können.
 
 ## Starten
 
@@ -118,42 +118,39 @@ dem `index.php` liegt. `php start.php` kann gar nicht im falschen Ordner
 landen. Nach dem Entpacken des ZIP von GitHub liegt übrigens alles nochmal
 eine Ebene tiefer in `ultimate-duck-mule-<branch>/`.
 
-**Menü lädt, aber „Los geht's" bringt 500** – ein PHP-Fehler in `game.php`.
+**Menü lädt, aber „Raum erstellen“ bringt 500** – ein PHP-Fehler in `game.php`.
 Die genaue Meldung steht immer im Terminal, in dem der Server läuft; mit
 `php start.php` erscheint sie zusätzlich im Browser. Früher passierte das,
 wenn `php-mbstring` fehlte – das Spiel kommt inzwischen ohne diese
 Erweiterung aus.
 
-## Spielmodi
+## Online spielen
 
-### Lokal an einer Tastatur
+Jeder spielt an seinem eigenen Rechner. Name und Figur trägt man im Menü ein, dann
+erstellt einer einen Raum und gibt den vierstelligen Code weiter; bis zu vier
+Spieler können beitreten. In der **Lobby** wählt jeder seine **Farbe** (jede gibt
+es nur einmal pro Raum), der Gastgeber wählt Welt und Rundenzahl.
 
-2 bis 4 Spieler, jeder mit eigenem Tastenblock:
+Steuerung: `A`/`D` **oder** die Pfeiltasten zum Laufen, `W`/`↑`/Leertaste zum
+Springen, `S`/`↓` fällt durch Einweg-Plattformen. In der Bauphase platziert der
+Spieler am Zug sein Bauteil mit der **Maus**: `1`–`4` wählt die Karte, `R` dreht
+sie; Rechtsklick oder `Esc` bricht das Zielen mit der Abrissbirne ab. Die Vorschau
+am Mauszeiger zeigt vorher, was das Bauteil anrichtet – Reichweite des Luftstroms,
+Schussbahn, Pendelweg, Sägenschiene. Ohne Maus bewegt man den Bauzeiger mit den
+Laufen-/Springen-Tasten und setzt mit `Enter`.
 
-| Spieler | Laufen | Springen | Runter |
-| --- | --- | --- | --- |
-| 1 | `A` / `D` | `W` | `S` |
-| 2 | `←` / `→` | `↑` | `↓` |
-| 3 | `J` / `L` | `I` | `K` |
-| 4 | `F` / `H` oder Ziffernblock `4` / `6` | `T` oder `8` | `G` oder `5` |
+**Die anderen sehen nur, wo gebaut wird** – die Vorschau am Mauszeiger des
+Bauenden, aber nicht seine Handkarten.
 
-In der Bauphase platziert der Spieler, der am Zug ist, sein Bauteil mit der
-**Maus**: `1`–`4` wählt das Bauteil, `R` dreht es; Rechtsklick oder `Esc` bricht
-das Zielen mit der Abrissbirne ab. Die Vorschau am Mauszeiger zeigt vorher, was
-das Bauteil anrichtet – Reichweite des Luftstroms, Schussbahn, Pendelweg,
-Sägenschiene. Wer keine Maus benutzen will, bewegt den Bauzeiger mit den eigenen
-Laufen-/Springen-Tasten und platziert mit `Enter`.
-
-### Online mit Raumcode
-
-Name und Figur trägt man **einmal** ein – sie gelten fürs Erstellen wie fürs
-Beitreten. Ein Spieler erstellt einen Raum und gibt den vierstelligen Code weiter;
-bis zu vier Spieler können beitreten. Die Steuerung ist dann `A`/`D` **oder** die Pfeiltasten.
+**Die Uhr der Partyphase führt der Server:** 60 Sekunden, und sobald die erste
+Figur im Ziel ist, bleiben allen noch 10. Alle sehen denselben Zeitbalken, die
+letzten drei Sekunden zählen groß und rot herunter, und bei Ablauf endet die Runde
+für alle gleichzeitig.
 
 Aufteilung der Verantwortung:
 
 * **Server (PHP)** ist die Wahrheit für alles Diskrete: Phasen, Zugreihenfolge,
-  gesetzte Bauteile, Rundenergebnisse und Punktestand.
+  Handkarten, gesetzte Bauteile, Partyzeit, Rundenergebnisse und Punktestand.
 * **Client (JavaScript)** rechnet die Physik der eigenen Figur und meldet nur das
   Ergebnis („im Ziel“ / „gestorben an Bauteil von Spieler X“) zurück. Die anderen
   Figuren werden aus den Serverpositionen interpoliert.
@@ -161,7 +158,8 @@ Aufteilung der Verantwortung:
 Synchronisiert wird per Polling – rund 11× pro Sekunde in der Partyphase, gut 5×
 in der Bauphase (damit man dem Bauenden flüssig zusieht) und etwa 1× sonst. Ohne
 WebSockets, weil außer PHP nichts erlaubt ist; für vier Spieler im LAN oder auf
-einem normalen Webspace reicht das.
+einem normalen Webspace reicht das. Wer mit Freunden im selben WLAN spielt, startet
+den Server mit `php start.php --lan`.
 
 ## Bauteile
 
@@ -201,7 +199,7 @@ will, beendet seinen Zug mit **Zug beenden**.
 | Schutzschild | Fängt einen tödlichen Treffer ab (Stacheln, Säge, Pendel, Pfeil) – gegen Abstürze hilft er nicht |
 | Turbo | Diese Runde deutlich schneller laufen |
 | Gleitschirm | Sprungtaste in der Luft halten und langsam hinabschweben |
-| Abrissbirne | Ein liegendes Bauteil deiner Wahl entfernen – Karte anklicken, dann aufs Bauteil |
+| Abrissbirne | Räumt zwei nebeneinanderliegende Felder – `R` dreht zwischen waagerecht und senkrecht, Klick setzt an |
 
 Doppelsprung, Schutzschild, Turbo und Gleitschirm wirken in der Partyphase direkt
 nach dem Einsetzen. In der Spielerleiste zeigt ein kleines Zeichen, wer gerade was
@@ -254,11 +252,12 @@ herauslaufen geht nicht, nur nach unten fällt man.
 
 ## Selbsttest
 
-`tests.php` im Browser öffnen. Die Seite fährt 80 Tests: gegen die echte
+`tests.php` im Browser öffnen. Die Seite fährt 84 Tests: gegen die echte
 Spiel-Engine (Sprunghöhen, jedes Bauteil, jede Todesursache, die sichere
 Startzone, Doppelsprung, Schild, Turbo, Gleitschirm), gegen die Serverregeln in PHP
-(Reihenfolge, Kartenziehen, Power-ups, wann Bauteile verschwinden, Matchende nach
-Runden samt Gleichstand, Grabsteine, Lobby, Karten-Parser) – und sie vergleicht
+(Reihenfolge, Kartenziehen, Power-ups, Abrissbirne, verdeckte Handkarten, Farbwahl,
+Partyzeit, wann Bauteile verschwinden, Matchende nach Runden samt Gleichstand,
+Grabsteine, Lobby, Karten-Parser) – und sie vergleicht
 Bauregeln, Grabsteine sowie Bauteil- und Power-up-Katalog von JavaScript **mit denen
 von PHP**, damit Server und Client nicht auseinanderlaufen.
 
@@ -271,7 +270,7 @@ auf, fällt das sofort auf.
 
 ```
 start.php              Starter fürs Terminal: prüft alles und startet den Server
-index.php              Menü: lokales Spiel einrichten, Raum erstellen/beitreten
+index.php              Menü: Raum erstellen oder beitreten, Regeln
 game.php               Spielseite; liefert Level- und Kartendaten als JSON an den Client
 tests.php              Selbsttest-Seite (Physik + Abgleich PHP/JavaScript)
 api/index.php          JSON-Schnittstelle für den Online-Modus
@@ -284,7 +283,7 @@ assets/js/core.js      Konstanten, Mathe-Helfer, synthetischer Sound
 assets/js/level.js     Kachelgitter, Bauteil-Physik, bewegliche Gefahren
 assets/js/player.js    Steuerung und Plattformer-Physik der Figur
 assets/js/render.js    Komplettes Zeichnen auf die Canvas
-assets/js/input.js     Tastatur und Maus, vier Tastenbelegungen
+assets/js/input.js     Tastatur und Maus
 assets/js/net.js       Polling-Transport für den Online-Modus
 assets/js/game.js      Phasenmaschine, HUD, Spielschleife
 data/rooms/            Laufzeitdaten der Online-Räume (wird ignoriert von git)
@@ -331,8 +330,8 @@ erscheinen deshalb nur als einzelne Knoten; die PHP-Klassen, `level.js` und
 * **Bauteile sind reine Hindernisse.** Im Original hilft man mit seinen Teilen
   auch sich selbst; hier sind alle Level von vornherein schaffbar, und gebaut
   wird ausschließlich gegen die anderen.
-* **Gebaut wird der Reihe nach**, nicht gleichzeitig. An einer gemeinsamen Tastatur
-  geht es gar nicht anders, und online bleibt die Reihenfolge damit eindeutig.
+* **Gebaut wird der Reihe nach**, nicht gleichzeitig – so bleibt die Reihenfolge
+  eindeutig, und alle sehen, wo gebaut wird.
 * **Figuren kollidieren nicht miteinander** – sie laufen durcheinander hindurch.
 * Online ist die Physik **clientseitig**: Wer das Spiel manipulieren will, kann das.
   Für eine Runde mit Freunden ist das kein Problem, für ein Turnier schon.
