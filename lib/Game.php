@@ -60,6 +60,14 @@ final class Game
     public const CHARACTERS = ['duck', 'mule', 'racoon', 'frog'];
 
     /**
+     * Todesursachen, fuer die es einen Schuldigen geben kann. Zeitablauf,
+     * Aufgeben und Verbindungsabbruch gehoeren nicht dazu.
+     *
+     * @var list<string>
+     */
+    public const DEADLY_CAUSES = ['sturz', 'stachel', 'saege', 'pendel', 'pfeil'];
+
+    /**
      * Waehlbare Spielerfarben. Die ersten vier sind die Standardfarben der
      * Plaetze; jede Farbe gibt es pro Raum nur einmal.
      *
@@ -185,6 +193,27 @@ final class Game
             }
         }
         $room['players'][$token]['color'] = $color;
+        self::touch($room);
+    }
+
+    /**
+     * Tier (Figur) in der Lobby wechseln. Anders als Farben darf dasselbe
+     * Tier mehrfach vorkommen - die Farbe unterscheidet die Spieler.
+     *
+     * @param array<string, mixed> $room
+     */
+    public static function setChar(array &$room, string $token, string $char): void
+    {
+        if (!isset($room['players'][$token])) {
+            throw new RuntimeException('Du bist nicht in diesem Raum.');
+        }
+        if ($room['phase'] !== 'lobby') {
+            throw new RuntimeException('Die Figur lässt sich nur in der Lobby ändern.');
+        }
+        if (!in_array($char, self::CHARACTERS, true)) {
+            throw new RuntimeException('Diese Figur gibt es nicht.');
+        }
+        $room['players'][$token]['char'] = $char;
         self::touch($room);
     }
 
@@ -646,15 +675,23 @@ final class Game
             return is_numeric($value) && (int) $value > 0 ? (int) $value : null;
         };
 
+        $finished = (bool) ($result['finished'] ?? false);
+        $cause = self::cleanCause((string) ($result['cause'] ?? ''));
+        // Schuldige gibt es nur bei einem echten Tod durch Sturz oder Falle -
+        // nicht im Ziel, nicht beim Aufgeben und nicht bei Zeitablauf. Sonst
+        // gaebe ein kurzer Kontakt mit Oel oder Ventilator Punkte, obwohl
+        // niemand gestorben ist.
+        $killed = !$finished && in_array($cause, self::DEADLY_CAUSES, true);
+
         $room['players'][$token]['result'] = [
-            'finished' => (bool) ($result['finished'] ?? false),
+            'finished' => $finished,
             'time' => round(max(0.0, min(999.0, (float) ($result['time'] ?? 0))), 2),
-            'killerSlot' => $slot($result['killerSlot'] ?? null),
+            'killerSlot' => $killed ? $slot($result['killerSlot'] ?? null) : null,
             // Wer mit Öl oder Ventilator nachgeholfen hat.
-            'assistSlot' => $slot($result['assistSlot'] ?? null),
-            'killerBlock' => $blockId($result['killerBlock'] ?? null),
-            'assistBlock' => $blockId($result['assistBlock'] ?? null),
-            'cause' => self::cleanCause((string) ($result['cause'] ?? '')),
+            'assistSlot' => $killed ? $slot($result['assistSlot'] ?? null) : null,
+            'killerBlock' => $killed ? $blockId($result['killerBlock'] ?? null) : null,
+            'assistBlock' => $killed ? $blockId($result['assistBlock'] ?? null) : null,
+            'cause' => $finished ? 'ziel' : $cause,
         ];
 
         // Die erste Figur im Ziel verkuerzt die Restzeit fuer alle.

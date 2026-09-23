@@ -148,6 +148,10 @@
     ctx: null,
     enabled: true,
     master: null,
+    // Geraeusche des Levels (Pfeilfallen, Bruchbloecke). Der Spielcontroller
+    // schaltet sie ausserhalb von Bau- und Partyphase ab - nach dem Match
+    // soll nichts mehr weiterpiepen.
+    ambient: true,
 
     init: function () {
       if (this.ctx) { return; }
@@ -227,8 +231,21 @@
     deny: function () { this.tone({ type: 'square', from: 180, to: 90, dur: 0.14, vol: 0.2 }); },
     tick: function () { this.tone({ type: 'sine', from: 880, dur: 0.07, vol: 0.16 }); },
     start: function () { this.tone({ type: 'sine', from: 1320, dur: 0.22, vol: 0.22 }); },
-    shoot: function () { this.tone({ type: 'sawtooth', from: 900, to: 400, dur: 0.07, vol: 0.1 }); },
-    crumble: function () { this.noise(0.18, 0.14); },
+    shoot: function () {
+      if (this.ambient) { this.tone({ type: 'sawtooth', from: 900, to: 400, dur: 0.07, vol: 0.1 }); }
+    },
+    crumble: function () {
+      if (this.ambient) { this.noise(0.18, 0.14); }
+    },
+    /** Spielautomat: Walze rattert, Walze rastet ein, alles steht. */
+    spin: function () { this.tone({ type: 'square', from: 520 + Math.random() * 180, dur: 0.025, vol: 0.05 }); },
+    reel: function (i) { this.tone({ type: 'triangle', from: 440 + i * 110, to: 330 + i * 110, dur: 0.09, vol: 0.22 }); },
+    jackpot: function () {
+      var self = this;
+      [784, 1047].forEach(function (f, i) {
+        setTimeout(function () { self.tone({ type: 'triangle', from: f, dur: 0.12, vol: 0.2 }); }, i * 70);
+      });
+    },
     win: function () {
       var self = this;
       [523, 659, 784, 1047, 1319].forEach(function (f, i) {

@@ -8,6 +8,13 @@
   var HAND_SIZE = 4;
   var FINAL_SECONDS = 3;          // grosser Countdown vor Ablauf der Zeit
   var ROUND_CHOICES = [3, 5, 8, 10, 12, 15, 20];
+  var CHAR_ORDER = ['duck', 'mule', 'racoon', 'frog'];
+
+  // Spielautomat zu Beginn des eigenen Bauzugs: erste Walze rastet nach
+  // ROLL_FIRST Sekunden ein, jede weitere ROLL_STEP spaeter.
+  var ROLL_FIRST = 0.7;
+  var ROLL_STEP = 0.3;
+  var ROLL_SWAP = 0.065;
 
   // Bauzeiger per Tastatur - ohne Leertaste, die setzt das Bauteil.
   var CURSOR = {
@@ -35,6 +42,8 @@
     dom: {},
     overlayKind: '',
     lobbySignature: '',
+    // Laufender Spielautomat (null = keiner).
+    roll: null,
 
     build: {
       card: 0, rot: 0, tx: -1, ty: -1, valid: false, busy: false,
@@ -185,6 +194,12 @@
       var mouse = UDM.Input.mouse;
       var input = UDM.Input;
 
+      // Waehrend die Walzen laufen, wird noch nicht gebaut.
+      if (this.roll) {
+        this.build.valid = false;
+        return;
+      }
+
       // Karten waehlen und drehen.
       for (var k = 0; k < HAND_SIZE; k++) {
         if (input.wasPressed('Digit' + (k + 1))) { this.selectCard(k); }
@@ -228,7 +243,7 @@
     },
 
     selectCard: function (index) {
-      if (!this.isMyTurn()) { return; }
+      if (!this.isMyTurn() || this.roll) { return; }
       var builder = this.activeBuilder();
       if (!builder.hand || index < 0 || index >= builder.hand.length) { return; }
       var card = builder.hand[index];
@@ -252,7 +267,7 @@
     },
 
     rotateSelection: function () {
-      if (!this.isMyTurn()) { return; }
+      if (!this.isMyTurn() || this.roll) { return; }
       if (this.build.deleting) {
         this.build.wreckRot = 1 - this.build.wreckRot;
         UDM.Audio.select();
@@ -346,7 +361,7 @@
 
     /** Zug vorzeitig beenden. */
     endTurn: function () {
-      if (!this.isMyTurn()) { return; }
+      if (!this.isMyTurn() || this.roll) { return; }
       var self = this;
       this.net.call('skip').then(function (data) { self.applyServerState(data.state); }).catch(function () {});
     },
@@ -620,6 +635,8 @@
         if (builder && (phaseChanged || previous.turnSlot !== state.turnSlot)) {
           this.build.deleting = false;
           this.setBanner(builder.slot === this.mySlot ? 'Du baust!' : (builder.name + ' baut …'));
+          if (builder.slot === this.mySlot) { this.startRoll(builder.hand); }
+          else { this.roll = null; }
         }
       } else if (state.phase === 'score') {
         if (this.phase !== 'score') {
@@ -795,6 +812,10 @@
       this.dom['turn-info'].innerHTML = name + ' ist am Zug<br>' + quota;
 
       var hand = builder.hand || [];
+      if (this.roll) {
+        this.renderReels(hand);
+        return;
+      }
       var selectedIndex = this.selectedIndex();
       var html = '';
       for (var i = 0; i < hand.length; i++) {
@@ -835,6 +856,112 @@
       this.paintCardIcons(this.build.rot);
     },
 
+    /* ------------------------------------------------------ Spielautomat */
+
+    /** Karten des eigenen Zugs wie Walzen eines Spielautomaten drehen. */
+    startRoll: function (hand) {
+      if (!hand || !hand.length) {
+        this.roll = null;
+        return;
+      }
+      var pool = Object.keys(this.cfg.cards).concat(Object.keys(this.cfg.powerups || {}));
+      var pick = function () { return pool[Math.floor(Math.random() * pool.length)]; };
+      this.roll = {
+        time: 0,
+        swap: 0,
+        pool: pool,
+        stops: hand.map(function (_, i) { return ROLL_FIRST + i * ROLL_STEP; }),
+        landedAt: hand.map(function () { return -1; }),
+        shown: hand.map(pick)
+      };
+      this.renderHand();
+    },
+
+    /** Walzen weiterdrehen, nacheinander einrasten lassen. */
+    updateRoll: function (dt) {
+      var roll = this.roll;
+      if (!roll) { return; }
+      var me = this.playerBySlot(this.mySlot);
+      var hand = (me && me.hand) || [];
+      if (!this.isMyTurn() || !hand.length) {
+        this.roll = null;
+        return;
+      }
+
+      roll.time += dt;
+      roll.swap -= dt;
+      var spinning = false;
+      for (var i = 0; i < hand.length; i++) {
+        if (roll.landedAt[i] >= 0) { continue; }
+        if (roll.time >= roll.stops[i]) {
+          roll.landedAt[i] = roll.time;
+          roll.shown[i] = hand[i];
+          UDM.Audio.reel(i);
+        } else {
+          spinning = true;
+          if (roll.swap <= 0) {
+            var next = roll.shown[i];
+            while (next === roll.shown[i] && roll.pool.length > 1) {
+              next = roll.pool[Math.floor(Math.random() * roll.pool.length)];
+            }
+            roll.shown[i] = next;
+          }
+        }
+      }
+      if (roll.swap <= 0) {
+        roll.swap = ROLL_SWAP;
+        if (spinning) { UDM.Audio.spin(); }
+      }
+
+      if (!spinning && roll.time >= roll.stops[hand.length - 1] + 0.35) {
+        // Alles steht - jetzt wird gebaut.
+        this.roll = null;
+        UDM.Audio.jackpot();
+        this.updateHud();
+        return;
+      }
+      this.paintReels(hand);
+    },
+
+    /** Handkarten waehrend des Rollens: drehende und eingerastete Walzen. */
+    renderReels: function (hand) {
+      var roll = this.roll;
+      var html = '';
+      for (var i = 0; i < hand.length; i++) {
+        var landed = roll.landedAt[i] >= 0;
+        var power = landed && this.isPowerUp(hand[i]);
+        // Einrast-Wackler nur direkt nach dem Einrasten - nicht bei jedem Neuaufbau.
+        var state = !landed ? ' spinning' : (roll.time - roll.landedAt[i] < 0.35 ? ' landed' : ' stopped');
+        html += '<div class="card reel' + state + (power ? ' power' : '') +
+          '" data-reel="' + i + '">' +
+          '<span class="ckey">' + (power ? '★' : '') + (i + 1) + '</span>' +
+          '<canvas class="cicon" width="40" height="40"></canvas>' +
+          '<span class="cname">' + (landed ? UDM.escapeHtml(this.cardMeta(hand[i]).name) : '···') + '</span>' +
+          '</div>';
+      }
+      html += '<div class="spectate-note">Die Walzen drehen …</div>';
+      this.dom.hand.innerHTML = html;
+      this.paintReels(hand);
+    },
+
+    /** Symbole und Zustand der Walzen auffrischen, ohne alles neu zu bauen. */
+    paintReels: function (hand) {
+      var roll = this.roll;
+      var reels = this.dom.hand.querySelectorAll('[data-reel]');
+      for (var r = 0; r < reels.length; r++) {
+        var i = parseInt(reels[r].getAttribute('data-reel'), 10);
+        var landed = roll.landedAt[i] >= 0;
+        if (landed && reels[r].classList.contains('spinning')) {
+          reels[r].classList.remove('spinning');
+          reels[r].classList.add('landed');
+          reels[r].classList.toggle('power', this.isPowerUp(hand[i]));
+          reels[r].querySelector('.ckey').textContent = (this.isPowerUp(hand[i]) ? '★' : '') + (i + 1);
+          reels[r].querySelector('.cname').textContent = this.cardMeta(hand[i]).name;
+        }
+        UDM.Render.drawCardIcon(reels[r].querySelector('canvas'), roll.shown[i], 0, this.time);
+      }
+    },
+
     /** Malt die Mini-Vorschau in die Kartenbuttons. */
     paintCardIcons: function (rot) {
       var icons = this.dom.hand.querySelectorAll('canvas.cicon');
@@ -861,6 +988,8 @@
         html = me && me.placedThisRound
           ? '<span>Du hast schon gebaut – jetzt heißt es zuschauen.</span>'
           : '<span>Du baust als <b>' + pos + '.</b> – bis dahin zuschauen.</span>';
+      } else if (this.phase === 'build' && this.roll) {
+        html = '<span>Gleich geht es los – deine Karten werden gezogen.</span>';
       } else if (this.phase === 'build' && this.build.deleting) {
         html = '<span><b>R</b> waagerecht / senkrecht</span><span><b>Klick</b> abreißen</span>' +
           '<span><b>Rechtsklick</b> / <b>Esc</b> abbrechen</span>';
@@ -920,11 +1049,22 @@
 
       // Farbwahl: belegte Farben sind gesperrt und zeigen, wer sie hat.
       var mine = null;
+      var myChar = null;
       var owners = {};
       state.players.forEach(function (p) {
-        if (p.you) { mine = p.color; }
-        else { owners[p.color] = p.name; }
+        if (p.you) {
+          mine = p.color;
+          myChar = p.char;
+        } else {
+          owners[p.color] = p.name;
+        }
       });
+      // Tierwahl: dasselbe Tier darf es mehrfach geben.
+      var figs = CHAR_ORDER.map(function (id) {
+        var label = UDM.CHARACTERS[id] ? UDM.CHARACTERS[id].label : id;
+        return '<button type="button" class="fig' + (id === myChar ? ' on' : '') + '" data-action="char"' +
+          ' data-char="' + id + '" title="' + label + '"><canvas width="40" height="40" data-fig="' + id + '"></canvas></button>';
+      }).join('');
       var swatches = (this.cfg.colors || UDM.SLOT_COLORS).map(function (color) {
         var owner = owners[color];
         return '<button type="button" class="swatch' + (color === mine ? ' on' : '') + '" style="--c:' + color + '"' +
@@ -937,7 +1077,10 @@
       var rounds = state.rounds || 8;
       var side = '<div class="lobby-label">Spieler (' + state.players.length + '/4)</div>' +
         '<ul class="lobby-list">' + rows + '</ul>' +
-        '<div class="lobby-label">Deine Farbe</div><div class="swatches">' + swatches + '</div>';
+        '<div class="lobby-me">' +
+        '<div class="me-row"><span class="lobby-label">Tier</span><div class="figs">' + figs + '</div></div>' +
+        '<div class="me-row"><span class="lobby-label">Farbe</span><div class="swatches">' + swatches + '</div></div>' +
+        '</div>';
       var main;
 
       if (state.isHost) {
@@ -985,6 +1128,23 @@
         var def = self.levelDef(canvas.getAttribute('data-preview'));
         if (def) { UDM.Render.drawPreview(canvas, def); }
       });
+      this.dom.overlay.querySelectorAll('canvas[data-fig]').forEach(function (canvas) {
+        self.paintFigure(canvas, canvas.getAttribute('data-fig'), mine || UDM.slotColor(self.mySlot));
+      });
+    },
+
+    /** Kleine Figurenvorschau in der eigenen Farbe (Tierwahl der Lobby). */
+    paintFigure: function (canvas, char, color) {
+      var ctx = canvas.getContext('2d');
+      ctx.clearRect(0, 0, canvas.width, canvas.height);
+      var p = {
+        x: 0, y: 0, w: UDM.PHYS.playerW, h: UDM.PHYS.playerH, slot: this.mySlot, char: char,
+        face: 1, anim: 'idle', animTime: 0, squash: 1, alive: true, finished: false,
+        deathTimer: 0, name: '', color: color, dark: UDM.darken(color)
+      };
+      p.x = canvas.width / 2 - p.w / 2;
+      p.y = canvas.height - p.h - 4;
+      UDM.Render.drawPlayer(ctx, p, this.time, false);
     },
 
     levelDef: function (id) {
@@ -1010,10 +1170,10 @@
       }).catch(function (err) { self.setBanner(err.message, 2); });
     },
 
-    /** Eigene Farbe in der Lobby waehlen. */
-    sendColor: function (color) {
+    /** Eigene Farbe oder eigenes Tier in der Lobby waehlen. */
+    sendChoice: function (action, payload) {
       var self = this;
-      this.net.call('color', { color: color }).then(function (data) {
+      this.net.call(action, payload).then(function (data) {
         UDM.Audio.select();
         self.applyServerState(data.state);
       }).catch(function (err) {
@@ -1187,7 +1347,9 @@
       } else if (action === 'rounds') {
         this.sendSettings(null, parseInt(target.getAttribute('data-rounds'), 10));
       } else if (action === 'color') {
-        this.sendColor(target.getAttribute('data-color'));
+        this.sendChoice('color', { color: target.getAttribute('data-color') });
+      } else if (action === 'char') {
+        this.sendChoice('char', { char: target.getAttribute('data-char') });
       }
     },
 
@@ -1204,7 +1366,12 @@
         if (this.bannerTimer <= 0) { this.setBanner(''); }
       }
 
+      // Pfeilfallen & Co. sind nur waehrend des Spiels zu hoeren - in Lobby,
+      // Punkteansicht und nach dem Match ist Ruhe.
+      UDM.Audio.ambient = this.phase === 'build' || this.phase === 'party';
+
       if (this.phase === 'build') {
+        this.updateRoll(dt);
         // Nur einmal pro Frame: Klicks und Tastendruecke sind Flanken.
         this.stepBuild();
         // Auch in der Bauphase laufen Saegen, Pendel und Pfeile weiter -

@@ -521,8 +521,11 @@
     this.killerSlot = (typeof ownerSlot === 'number' && ownerSlot >= 0) ? ownerSlot : null;
     this.killerBlock = this.killerSlot !== null ? (blockId || null) : null;
 
-    var helper = this.assistTimer > 0 ? this.assistSlot : null;
-    var helperBlock = this.assistTimer > 0 ? this.assistBlock : null;
+    // Aufgeben und Zeitablauf hat niemand verschuldet - auch nicht, wer
+    // kurz vorher mit Oel oder Ventilator geschubst hat.
+    var culpable = cause !== 'zeit' && cause !== 'aufgabe';
+    var helper = culpable && this.assistTimer > 0 ? this.assistSlot : null;
+    var helperBlock = culpable && this.assistTimer > 0 ? this.assistBlock : null;
     if (this.killerSlot === null && helper !== null) {
       // Ohne Falle, aber mit Schubs: der Schubs war die Todesursache.
       this.killerSlot = helper;
@@ -555,6 +558,11 @@
     this.anim = 'done';
     this.cause = 'ziel';
     this.confetti = 1.4;
+    // Wer im Ziel ist, hat keinen Schuldigen - ein Schubs unterwegs zaehlt nicht.
+    this.killerSlot = null;
+    this.killerBlock = null;
+    this.assistSlot = null;
+    this.assistBlock = null;
     if (level) {
       level.burst(this.centerX(), this.centerY(), '#fff05a', 26);
       level.burst(this.centerX(), this.centerY(), this.color, 18);

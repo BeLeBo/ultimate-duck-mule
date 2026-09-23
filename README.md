@@ -57,7 +57,9 @@ Fallenpunkte. Unter 0 Punkte geht es nicht.
 
 Öl und Ventilator töten nicht selbst, zählen aber: Wer damit jemanden über die
 Kante schiebt, bekommt den Kill. Rutscht das Opfer in die Falle eines Dritten,
-bekommen **beide** einen Punkt – der Fallensteller und der Nachhelfer.
+bekommen **beide** einen Punkt – der Fallensteller und der Nachhelfer. Das gilt nur,
+wenn das Opfer wirklich stirbt: Wer nach einem Schubs trotzdem ins Ziel kommt,
+aufgibt oder in die Zeit läuft, bringt niemandem Punkte.
 
 Ein Match dauert eine **feste Zahl an Runden** (wählbar 3–20, Standard 8). Wer nach
 der letzten Runde die meisten Punkte hat, gewinnt – bei Gleichstand teilen sich die
@@ -128,8 +130,9 @@ Erweiterung aus.
 
 Jeder spielt an seinem eigenen Rechner. Name und Figur trägt man im Menü ein, dann
 erstellt einer einen Raum und gibt den vierstelligen Code weiter; bis zu vier
-Spieler können beitreten. In der **Lobby** wählt jeder seine **Farbe** (jede gibt
-es nur einmal pro Raum), der Gastgeber wählt Welt und Rundenzahl.
+Spieler können beitreten. In der **Lobby** wählt jeder sein **Tier** (Ente,
+Maultier, Waschbär, Frosch) und seine **Farbe** (jede gibt es nur einmal pro Raum),
+der Gastgeber wählt Welt und Rundenzahl.
 
 Steuerung: `A`/`D` **oder** die Pfeiltasten zum Laufen, `W`/`↑`/Leertaste zum
 Springen, `S`/`↓` fällt durch Einweg-Plattformen. In der Bauphase platziert der
@@ -139,8 +142,11 @@ am Mauszeiger zeigt vorher, was das Bauteil anrichtet – Reichweite des Luftstr
 Schussbahn, Pendelweg, Sägenschiene. Ohne Maus bewegt man den Bauzeiger mit den
 Laufen-/Springen-Tasten und setzt mit `Enter`.
 
+Zu Beginn des eigenen Bauzugs werden die Karten wie an einem **Spielautomaten**
+gezogen: die Walzen drehen und rasten nacheinander ein, danach geht es los.
 **Die anderen sehen nur, wo gebaut wird** – die Vorschau am Mauszeiger des
-Bauenden, aber nicht seine Handkarten.
+Bauenden, aber nicht seine Handkarten. Pfeilfallen und Bruchblöcke sind nur
+während des Spiels zu hören; in Lobby, Punkteansicht und nach dem Match ist Ruhe.
 
 **Die Uhr der Partyphase führt der Server:** 60 Sekunden, und sobald die erste
 Figur im Ziel ist, bleiben allen noch 10. Alle sehen denselben Zeitbalken, die
@@ -252,12 +258,12 @@ herauslaufen geht nicht, nur nach unten fällt man.
 
 ## Selbsttest
 
-`tests.php` im Browser öffnen. Die Seite fährt 84 Tests: gegen die echte
+`tests.php` im Browser öffnen. Die Seite fährt 88 Tests: gegen die echte
 Spiel-Engine (Sprunghöhen, jedes Bauteil, jede Todesursache, die sichere
 Startzone, Doppelsprung, Schild, Turbo, Gleitschirm), gegen die Serverregeln in PHP
-(Reihenfolge, Kartenziehen, Power-ups, Abrissbirne, verdeckte Handkarten, Farbwahl,
-Partyzeit, wann Bauteile verschwinden, Matchende nach Runden samt Gleichstand,
-Grabsteine, Lobby, Karten-Parser) – und sie vergleicht
+(Reihenfolge, Kartenziehen, Power-ups, Abrissbirne, verdeckte Handkarten, Farb- und
+Tierwahl, Partyzeit, Punkte nur bei echtem Tod, wann Bauteile verschwinden, Matchende
+nach Runden samt Gleichstand, Grabsteine, Lobby, Karten-Parser) – und sie vergleicht
 Bauregeln, Grabsteine sowie Bauteil- und Power-up-Katalog von JavaScript **mit denen
 von PHP**, damit Server und Client nicht auseinanderlaufen.
 

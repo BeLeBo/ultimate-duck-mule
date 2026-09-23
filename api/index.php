@@ -286,12 +286,17 @@ try {
             // no break
 
         case 'color':
+        case 'char':
             [$code, $token] = credentials($data);
             $error = null;
-            $room = Rooms::mutate($code, function (array $room) use ($token, $data, &$error): array {
+            $room = Rooms::mutate($code, function (array $room) use ($token, $data, $action, &$error): array {
                 heartbeat($room, $token, $data);
                 try {
-                    Game::setColor($room, $token, str_field($data, 'color'));
+                    if ($action === 'color') {
+                        Game::setColor($room, $token, str_field($data, 'color'));
+                    } else {
+                        Game::setChar($room, $token, str_field($data, 'char'));
+                    }
                 } catch (Throwable $e) {
                     $error = $e->getMessage();
                 }

@@ -182,6 +182,67 @@ $serverCheck('Farbwahl: freie Farbe geht, belegte nicht, nur in der Lobby',
     && $state['players'][1]['color'] === '#b18cff' && $late !== '',
     'Standard ' . implode(' ', $defaults) . ' | ' . $taken . ' | ' . $late);
 
+// Tier in der Lobby wechseln - doppelt erlaubt, nach dem Start nicht mehr.
+$room = $makeRoom(['Anna', 'Bo']);
+Game::setChar($room, $tokenOf($room, 'Bo'), 'frog');
+Game::setChar($room, $tokenOf($room, 'Anna'), 'frog');
+$badChar = '';
+try {
+    Game::setChar($room, $tokenOf($room, 'Anna'), 'dragon');
+} catch (RuntimeException $e) {
+    $badChar = $e->getMessage();
+}
+Game::startMatch($room, $tokenOf($room, 'Anna'));
+$lateChar = '';
+try {
+    Game::setChar($room, $tokenOf($room, 'Bo'), 'duck');
+} catch (RuntimeException $e) {
+    $lateChar = $e->getMessage();
+}
+$serverCheck('Tier wechseln: in der Lobby frei wählbar, danach nicht mehr',
+    $room['players'][$tokenOf($room, 'Anna')]['char'] === 'frog' && $room['players'][$tokenOf($room, 'Bo')]['char'] === 'frog'
+    && $badChar !== '' && $lateChar !== '',
+    $badChar . ' | ' . $lateChar);
+
+// "Nachgeholfen" nur, wenn wirklich jemand gestorben ist.
+$room = $makeRoom(['Anna', 'Bo', 'Cem']);
+Game::startMatch($room, $tokenOf($room, 'Anna'));
+Game::beginParty($room);
+$annaSlot = $room['players'][$tokenOf($room, 'Anna')]['slot'];
+// Bo streift Annas Öl und kommt trotzdem ins Ziel, Cem gibt nach einem Schubs auf.
+Game::reportResult($room, $tokenOf($room, 'Bo'), ['finished' => true, 'time' => 9.0, 'cause' => 'ziel',
+    'assistSlot' => $annaSlot, 'assistBlock' => 5]);
+Game::reportResult($room, $tokenOf($room, 'Cem'), ['finished' => false, 'time' => 4.0, 'cause' => 'aufgabe',
+    'killerSlot' => $annaSlot, 'killerBlock' => 5, 'assistSlot' => $annaSlot]);
+Game::reportResult($room, $tokenOf($room, 'Anna'), ['finished' => false, 'time' => 3.0, 'cause' => 'zeit',
+    'assistSlot' => 1]);
+$annaEntry = null;
+foreach ($room['lastRound']['entries'] as $entry) {
+    if ($entry['name'] === 'Anna') {
+        $annaEntry = $entry;
+    }
+}
+$serverCheck('Nachgeholfen und Fallenpunkte nur bei einem echten Tod',
+    $annaEntry !== null && $annaEntry['delta'] === 0 && $annaEntry['reasons'] === [],
+    'Anna: ' . json_encode($annaEntry['reasons'] ?? null));
+$room['phase'] = 'party';
+foreach ($room['players'] as &$player) {
+    $player['result'] = null;
+}
+unset($player);
+Game::reportResult($room, $tokenOf($room, 'Bo'), ['finished' => true, 'time' => 9.0, 'cause' => 'ziel']);
+Game::reportResult($room, $tokenOf($room, 'Cem'), ['finished' => false, 'time' => 4.0, 'cause' => 'stachel',
+    'killerSlot' => 1, 'killerBlock' => 6, 'assistSlot' => $annaSlot, 'assistBlock' => 5]);
+Game::reportResult($room, $tokenOf($room, 'Anna'), ['finished' => false, 'time' => 3.0, 'cause' => 'sturz']);
+$texts = [];
+foreach ($room['lastRound']['entries'] as $entry) {
+    if ($entry['name'] === 'Anna') {
+        $texts = array_column($entry['reasons'], 'text');
+    }
+}
+$serverCheck('Echter Tod durch Schubs in eine Falle zählt weiterhin als Nachgeholfen',
+    $texts === ['Nachgeholfen'], json_encode($texts));
+
 // Partyzeit: der Server fuehrt die Uhr und beendet die Runde.
 $room = $makeRoom(['Anna', 'Bo']);
 Game::startMatch($room, $tokenOf($room, 'Anna'));
@@ -888,6 +949,24 @@ window.UDM_SERVER_CHECKS = <?= json_encode($serverChecks, JSON_UNESCAPED_UNICODE
     check('Tödliches Bauteil meldet seine Kennung und lässt sich räumen',
       p.killerBlock === id && removed === 1 && level.blocks.length === 0,
       'gemeldet=' + p.killerBlock + ', erwartet=' + id + ', entfernt=' + removed);
+  }());
+
+  (function testNoAssistWithoutDeath() {
+    // Oel streifen und trotzdem ankommen: kein Schuldiger.
+    var level = makeLevel(FLAT);
+    var p = makePlayer(10, 17);
+    p.noteAssist(2, 7);
+    p.finish(level);
+    var q = makePlayer(12, 17);
+    q.noteAssist(2, 7);
+    q.kill('aufgabe', null, level);
+    var r = makePlayer(14, 17);
+    r.noteAssist(2, 7);
+    r.kill('sturz', null, level);
+    check('Schubs zählt nur, wenn man daran stirbt – nicht im Ziel, nicht beim Aufgeben',
+      p.assistSlot === null && p.killerSlot === null && q.killerSlot === null && q.assistSlot === null &&
+      r.killerSlot === 2,
+      'Ziel=' + p.assistSlot + ', Aufgabe=' + q.killerSlot + '/' + q.assistSlot + ', Sturz=' + r.killerSlot);
   }());
 
   (function testGiveUp() {
