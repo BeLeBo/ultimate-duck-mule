@@ -750,9 +750,21 @@ span.lobby-preview { font-size: 60px; }
   100% { transform: none; }
 }
 
-/* Hebel selbst ziehen: klickbar, leuchtet, PULL-Schild mit Lauflichtern */
-.slot { padding-right: 190px; }
+/* Hebel selbst ziehen: klickbar, leuchtet, PULL-Schild mit Lauflichtern.
+   Der Automat selbst steht genau in der Mitte; Schild und Leuchtpfeile
+   ragen rechts daneben hinaus. */
 .slot-lever { pointer-events: auto; cursor: pointer; }
+/* Grosse, unsichtbare Klickflaeche rund um Hebel und Knauf - auch dort,
+   wo der Knauf beim Ziehen hinunterschwingt. */
+.slot-lever::before {
+  content: '';
+  position: absolute;
+  left: -28px;
+  right: -46px;
+  top: -44px;
+  bottom: -44px;
+  border-radius: 24px;
+}
 .slot:not(.pulled) .slot-lever:hover .lever-arm { transform: scaleY(0.85); transition: transform 0.12s ease; }
 .slot:not(.pulled) .lever-knob { animation: knob-glow 0.8s ease-in-out infinite; }
 .pull-sign {
@@ -818,7 +830,6 @@ span.lobby-preview { font-size: 60px; }
 @keyframes pull-blink { 50% { opacity: 0.45; } }
 @keyframes bulb { 50% { background: #7a5a1a; box-shadow: none; } }
 @media (max-width: 900px) {
-  .slot { padding-right: 0; }
   .pull-sign { left: auto; right: -6px; top: -54px; transform: none; }
   .slot.pulled .pull-sign { transform: translateY(-8px); }
 }
