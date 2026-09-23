@@ -72,6 +72,7 @@ $configJson = json_encode($config, JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASH
     <div id="banner" class="hidden"></div>
     <div id="countdown" class="hidden"></div>
     <div id="timer" class="hidden"><i id="timer-fill"></i></div>
+    <div id="slot" class="slot hidden"></div>
     <div id="overlay" class="overlay hidden"></div>
   </div>
 

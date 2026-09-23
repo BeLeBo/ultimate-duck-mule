@@ -607,23 +607,6 @@ span.lobby-preview { font-size: 60px; }
 .swatch.on, .swatch.on:hover { border-color: #fff; box-shadow: 0 0 0 2px var(--c); }
 .swatch[disabled] { opacity: 0.3; cursor: not-allowed; }
 
-/* Spielautomat: Karten drehen wie Walzen und rasten nacheinander ein */
-.card.reel { cursor: default; }
-.card.reel.spinning { border-color: rgba(255, 203, 61, 0.55); }
-.card.reel.spinning canvas { animation: reel-spin 0.13s linear infinite; filter: blur(0.6px); }
-.card.reel.spinning .cname { color: var(--muted); letter-spacing: 2px; }
-.card.reel.landed { animation: reel-land 0.34s ease-out; border-color: var(--accent); }
-@keyframes reel-spin {
-  0% { transform: translateY(-6px); opacity: 0.55; }
-  50% { transform: translateY(0); opacity: 1; }
-  100% { transform: translateY(6px); opacity: 0.55; }
-}
-@keyframes reel-land {
-  0% { transform: translateY(-7px) scale(1.12); }
-  60% { transform: translateY(2px) scale(0.97); }
-  100% { transform: none; }
-}
-
 /* Lobby: eigenes Tier und eigene Farbe */
 .lobby-me { margin-bottom: 8px; }
 .me-row { display: flex; align-items: center; gap: 6px; margin-bottom: 6px; }
@@ -643,3 +626,126 @@ span.lobby-preview { font-size: 60px; }
 .fig canvas { display: block; width: 34px; height: 34px; }
 .fig:hover:not([disabled]) { border-color: rgba(255, 255, 255, 0.3); }
 .fig.on, .fig.on:hover { border-color: var(--accent); background: rgba(255, 203, 61, 0.16); }
+
+/* Spielautomat in der Bildschirmmitte: Walzen, Hebel, Lichter */
+.slot {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  z-index: 4;
+  pointer-events: none;
+  border-radius: 12px;
+  background: radial-gradient(ellipse at center, rgba(8, 9, 22, 0.25), rgba(8, 9, 22, 0.7));
+  animation: slot-in 0.35s ease-out;
+}
+.slot.hidden { display: none; }
+.slot.leaving { animation: slot-out 0.25s ease-in forwards; }
+.slot-machine {
+  position: relative;
+  padding: 14px 20px 12px;
+  border-radius: 28px 28px 18px 18px;
+  background: linear-gradient(180deg, #e0412f, #a51d1d);
+  border: 4px solid #ffd23f;
+  box-shadow: 0 10px 0 #6d1212, 0 22px 50px rgba(0, 0, 0, 0.55), inset 0 3px 0 rgba(255, 255, 255, 0.3);
+  text-align: center;
+}
+.slot.win .slot-machine { animation: slot-win 0.45s ease-in-out 2; }
+.slot-lights { display: flex; justify-content: space-between; margin: -4px 8px 6px; }
+.slot-lights i {
+  width: 10px;
+  height: 10px;
+  border-radius: 50%;
+  background: #ffe98a;
+  box-shadow: 0 0 8px #ffd23f;
+  animation: slot-blink 0.9s infinite;
+}
+.slot-title {
+  font-weight: 900;
+  font-size: 18px;
+  letter-spacing: 2px;
+  color: #ffe98a;
+  text-shadow: 0 2px 0 #6d1212;
+  margin-bottom: 10px;
+}
+.slot-window {
+  position: relative;
+  display: flex;
+  gap: 8px;
+  padding: 10px;
+  border-radius: 14px;
+  background: #2a1a3a;
+  box-shadow: inset 0 4px 12px rgba(0, 0, 0, 0.65);
+}
+.slot-reel { display: flex; flex-direction: column; align-items: center; gap: 6px; }
+.slot-reel canvas { display: block; border-radius: 9px; border: 3px solid #140c20; }
+.slot-reel.landed canvas { border-color: #ffd23f; animation: reel-land 0.3s ease-out; }
+.slot-reel.landed.power canvas { border-color: #c9a2ff; }
+.slot-name { min-height: 16px; font-size: 12px; font-weight: 800; color: #fff; white-space: nowrap; }
+/* Gewinnlinie auf Hoehe der Walzenmitte (Innenabstand + Rahmen + halbe Walze) */
+.slot-payline {
+  position: absolute;
+  left: 6px;
+  right: 6px;
+  top: 78px;
+  height: 2px;
+  background: rgba(255, 70, 70, 0.75);
+  box-shadow: 0 0 6px rgba(255, 70, 70, 0.8);
+}
+.slot-foot { margin-top: 8px; font-size: 12px; font-weight: 800; color: #ffd8d8; letter-spacing: 1px; }
+.slot-lever { position: absolute; right: -40px; top: 50%; width: 40px; height: 150px; transform: translateY(-50%); }
+.lever-base {
+  position: absolute;
+  left: 0;
+  top: 50%;
+  width: 20px;
+  height: 44px;
+  transform: translateY(-50%);
+  background: #7a1515;
+  border: 3px solid #ffd23f;
+  border-left: none;
+  border-radius: 0 10px 10px 0;
+}
+.lever-arm {
+  position: absolute;
+  left: 12px;
+  bottom: 50%;
+  width: 8px;
+  height: 64px;
+  border-radius: 4px;
+  background: linear-gradient(90deg, #e3e6ee, #8e95a5);
+  transform-origin: 50% 100%;
+}
+.lever-knob {
+  position: absolute;
+  left: 50%;
+  top: -13px;
+  width: 26px;
+  height: 26px;
+  margin-left: -13px;
+  border-radius: 50%;
+  background: radial-gradient(circle at 35% 35%, #ff8a8a, #c01818);
+  box-shadow: 0 3px 0 #700;
+}
+.slot-lever.pulled .lever-arm { animation: lever-pull 0.8s ease-in-out; }
+@keyframes lever-pull {
+  0% { transform: scaleY(1); }
+  35% { transform: scaleY(-0.9); }
+  55% { transform: scaleY(-0.9); }
+  100% { transform: scaleY(1); }
+}
+@keyframes slot-in {
+  from { opacity: 0; transform: scale(0.92); }
+  to { opacity: 1; transform: none; }
+}
+@keyframes slot-out { to { opacity: 0; transform: scale(0.96); } }
+@keyframes slot-blink { 50% { opacity: 0.35; } }
+@keyframes slot-win {
+  50% { box-shadow: 0 10px 0 #6d1212, 0 0 50px rgba(255, 210, 63, 0.9), inset 0 3px 0 rgba(255, 255, 255, 0.3); }
+}
+@keyframes reel-land {
+  0% { transform: translateY(-5px); }
+  60% { transform: translateY(2px); }
+  100% { transform: none; }
+}

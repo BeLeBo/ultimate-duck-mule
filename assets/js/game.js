@@ -10,11 +10,19 @@
   var ROUND_CHOICES = [3, 5, 8, 10, 12, 15, 20];
   var CHAR_ORDER = ['duck', 'mule', 'racoon', 'frog'];
 
-  // Spielautomat zu Beginn des eigenen Bauzugs: erste Walze rastet nach
-  // ROLL_FIRST Sekunden ein, jede weitere ROLL_STEP spaeter.
-  var ROLL_FIRST = 0.7;
-  var ROLL_STEP = 0.3;
-  var ROLL_SWAP = 0.065;
+  // Spielautomat zu Beginn des eigenen Bauzugs (Sekunden): Hebel geht runter,
+  // Walzen laufen an, die erste steht nach ROLL_FIRST, jede weitere
+  // ROLL_STEP spaeter; danach bleibt das Ergebnis ROLL_HOLD sichtbar.
+  var ROLL_PULL = 0.35;
+  var ROLL_SPIN = 0.6;
+  var ROLL_FIRST = 1.1;
+  var ROLL_STEP = 0.4;
+  var ROLL_HOLD = 0.8;
+  // Walzen: Fenstergroesse, Symbolgroesse und Abstand der Symbole (px).
+  var REEL_W = 84;
+  var REEL_H = 132;
+  var SLOT_ICON = 56;
+  var SLOT_STEP = 68;
 
   // Bauzeiger per Tastatur - ohne Leertaste, die setzt das Bauteil.
   var CURSOR = {
@@ -80,7 +88,7 @@
 
     cacheDom: function () {
       var ids = ['round-label', 'target-label', 'players', 'banner', 'countdown', 'timer',
-        'timer-fill', 'overlay', 'turn-info', 'hand', 'hints', 'btn-sound', 'btn-rules',
+        'timer-fill', 'overlay', 'slot', 'turn-info', 'hand', 'hints', 'btn-sound', 'btn-rules',
         'btn-giveup', 'level-label', 'log'];
       var self = this;
       ids.forEach(function (id) { self.dom[id] = document.getElementById(id); });
@@ -636,7 +644,7 @@
           this.build.deleting = false;
           this.setBanner(builder.slot === this.mySlot ? 'Du baust!' : (builder.name + ' baut …'));
           if (builder.slot === this.mySlot) { this.startRoll(builder.hand); }
-          else { this.roll = null; }
+          else { this.stopRoll(); }
         }
       } else if (state.phase === 'score') {
         if (this.phase !== 'score') {
@@ -813,7 +821,7 @@
 
       var hand = builder.hand || [];
       if (this.roll) {
-        this.renderReels(hand);
+        this.dom.hand.innerHTML = '<div class="spectate-note">Der Automat läuft …</div>';
         return;
       }
       var selectedIndex = this.selectedIndex();
@@ -858,107 +866,195 @@
 
     /* ------------------------------------------------------ Spielautomat */
 
-    /** Karten des eigenen Zugs wie Walzen eines Spielautomaten drehen. */
+    /**
+     * Zu Beginn des eigenen Bauzugs erscheint in der Bildschirmmitte ein
+     * Spielautomat: der Hebel geht runter, die Walzen laufen an, bremsen ab
+     * und rasten nacheinander auf den gezogenen Karten ein.
+     */
     startRoll: function (hand) {
       if (!hand || !hand.length) {
-        this.roll = null;
+        this.stopRoll();
         return;
       }
       var pool = Object.keys(this.cfg.cards).concat(Object.keys(this.cfg.powerups || {}));
       var pick = function () { return pool[Math.floor(Math.random() * pool.length)]; };
       this.roll = {
         time: 0,
-        swap: 0,
-        pool: pool,
-        stops: hand.map(function (_, i) { return ROLL_FIRST + i * ROLL_STEP; }),
-        landedAt: hand.map(function () { return -1; }),
-        shown: hand.map(pick)
+        pulled: false,
+        finishing: false,
+        reels: hand.map(function (id, i) {
+          var dur = ROLL_FIRST + i * ROLL_STEP;
+          // So viele Symbole laufen durch, bis die Walze steht.
+          var final = Math.round(dur * 7) + 4;
+          var strip = [];
+          for (var k = 0; k <= final + 2; k++) { strip.push(pick()); }
+          strip[final] = id;
+          return { id: id, dur: dur, final: final, strip: strip, pos: 0, speed: 0, tick: 0, landedAt: -1 };
+        })
       };
+      this.buildSlot(hand.length);
       this.renderHand();
     },
 
-    /** Walzen weiterdrehen, nacheinander einrasten lassen. */
+    /** Automat beenden - mit kurzem Ausblenden, wenn er gerade zu sehen ist. */
+    stopRoll: function (fade) {
+      this.roll = null;
+      var slot = this.dom.slot;
+      if (!slot || slot.classList.contains('hidden')) { return; }
+      if (!fade) {
+        slot.className = 'slot hidden';
+        slot.innerHTML = '';
+        return;
+      }
+      slot.classList.add('leaving');
+      setTimeout(function () {
+        if (slot.classList.contains('leaving')) {
+          slot.className = 'slot hidden';
+          slot.innerHTML = '';
+        }
+      }, 260);
+    },
+
+    /** Der Automat als HTML ueber dem Level; die Walzen sind Canvas. */
+    buildSlot: function (count) {
+      var slot = this.dom.slot;
+      var reels = '';
+      for (var i = 0; i < count; i++) {
+        reels += '<div class="slot-reel" data-reel="' + i + '">' +
+          '<canvas width="' + REEL_W + '" height="' + REEL_H + '"></canvas>' +
+          '<span class="slot-name">&nbsp;</span></div>';
+      }
+      var lights = '';
+      for (var l = 0; l < 9; l++) { lights += '<i style="animation-delay:' + (l * 0.11).toFixed(2) + 's"></i>'; }
+      slot.innerHTML =
+        '<div class="slot-machine">' +
+        '<div class="slot-lights">' + lights + '</div>' +
+        '<div class="slot-title">★ Bauteil-Automat ★</div>' +
+        '<div class="slot-window">' + reels + '<div class="slot-payline"></div></div>' +
+        '<div class="slot-foot">Viel Glück!</div>' +
+        '<div class="slot-lever"><div class="lever-base"></div>' +
+        '<div class="lever-arm"><div class="lever-knob"></div></div></div>' +
+        '</div>';
+      slot.className = 'slot';
+      this.paintSlot();
+    },
+
+    /** Symbol einer Karte, einmal gezeichnet und dann wiederverwendet. */
+    slotIcon: function (id) {
+      this.iconCache = this.iconCache || {};
+      if (!this.iconCache[id]) {
+        var canvas = document.createElement('canvas');
+        canvas.width = SLOT_ICON;
+        canvas.height = SLOT_ICON;
+        UDM.Render.drawCardIcon(canvas, id, 0, 0);
+        this.iconCache[id] = canvas;
+      }
+      return this.iconCache[id];
+    },
+
+    /** Hebel ziehen, Walzen drehen und nacheinander einrasten lassen. */
     updateRoll: function (dt) {
       var roll = this.roll;
       if (!roll) { return; }
-      var me = this.playerBySlot(this.mySlot);
-      var hand = (me && me.hand) || [];
-      if (!this.isMyTurn() || !hand.length) {
-        this.roll = null;
+      if (!this.isMyTurn()) {
+        this.stopRoll();
         return;
       }
 
       roll.time += dt;
-      roll.swap -= dt;
-      var spinning = false;
-      for (var i = 0; i < hand.length; i++) {
-        if (roll.landedAt[i] >= 0) { continue; }
-        if (roll.time >= roll.stops[i]) {
-          roll.landedAt[i] = roll.time;
-          roll.shown[i] = hand[i];
-          UDM.Audio.reel(i);
-        } else {
-          spinning = true;
-          if (roll.swap <= 0) {
-            var next = roll.shown[i];
-            while (next === roll.shown[i] && roll.pool.length > 1) {
-              next = roll.pool[Math.floor(Math.random() * roll.pool.length)];
-            }
-            roll.shown[i] = next;
-          }
-        }
-      }
-      if (roll.swap <= 0) {
-        roll.swap = ROLL_SWAP;
-        if (spinning) { UDM.Audio.spin(); }
+      if (!roll.pulled && roll.time >= ROLL_PULL) {
+        roll.pulled = true;
+        var lever = this.dom.slot.querySelector('.slot-lever');
+        if (lever) { lever.classList.add('pulled'); }
+        UDM.Audio.lever();
       }
 
-      if (!spinning && roll.time >= roll.stops[hand.length - 1] + 0.35) {
-        // Alles steht - jetzt wird gebaut.
-        this.roll = null;
+      var t = roll.time - ROLL_SPIN;
+      var ticked = false;
+      var lastLanding = 0;
+      var allLanded = true;
+      for (var i = 0; i < roll.reels.length; i++) {
+        var reel = roll.reels[i];
+        if (t <= 0) { allLanded = false; continue; }
+        var u = Math.min(1, t / reel.dur);
+        if (u < 1) {
+          // Schnell los, dann immer langsamer (ease-out).
+          reel.pos = reel.final * (1 - Math.pow(1 - u, 3));
+          reel.speed = 3 * reel.final * Math.pow(1 - u, 2) / reel.dur;
+          allLanded = false;
+        } else {
+          if (reel.landedAt < 0) {
+            reel.landedAt = roll.time;
+            reel.speed = 0;
+            UDM.Audio.reel(i);
+            var el = this.dom.slot.querySelector('[data-reel="' + i + '"]');
+            if (el) {
+              el.classList.add('landed');
+              el.classList.toggle('power', this.isPowerUp(reel.id));
+              el.querySelector('.slot-name').textContent = this.cardMeta(reel.id).name;
+            }
+          }
+          // Kleines Nachwippen beim Einrasten.
+          var b = (roll.time - reel.landedAt) / 0.28;
+          reel.pos = reel.final + (b < 1 ? -0.16 * Math.sin(Math.PI * b) * (1 - b) : 0);
+          lastLanding = Math.max(lastLanding, reel.landedAt);
+        }
+        var index = Math.floor(reel.pos + 0.5);
+        if (index !== reel.tick && reel.landedAt < 0) {
+          reel.tick = index;
+          ticked = true;
+        }
+      }
+      if (ticked) { UDM.Audio.spin(); }
+
+      if (allLanded && !roll.finishing && roll.time >= lastLanding + 0.2) {
+        roll.finishing = true;
         UDM.Audio.jackpot();
+        this.dom.slot.classList.add('win');
+      }
+      if (allLanded && roll.time >= lastLanding + ROLL_HOLD) {
+        // Alles steht - der Automat verschwindet, jetzt wird gebaut.
+        this.stopRoll(true);
         this.updateHud();
         return;
       }
-      this.paintReels(hand);
+      this.paintSlot();
     },
 
-    /** Handkarten waehrend des Rollens: drehende und eingerastete Walzen. */
-    renderReels: function (hand) {
+    /** Walzen zeichnen: sichtbare Symbole, Bewegungsunschaerfe, Schatten. */
+    paintSlot: function () {
       var roll = this.roll;
-      var html = '';
-      for (var i = 0; i < hand.length; i++) {
-        var landed = roll.landedAt[i] >= 0;
-        var power = landed && this.isPowerUp(hand[i]);
-        // Einrast-Wackler nur direkt nach dem Einrasten - nicht bei jedem Neuaufbau.
-        var state = !landed ? ' spinning' : (roll.time - roll.landedAt[i] < 0.35 ? ' landed' : ' stopped');
-        html += '<div class="card reel' + state + (power ? ' power' : '') +
-          '" data-reel="' + i + '">' +
-          '<span class="ckey">' + (power ? '★' : '') + (i + 1) + '</span>' +
-          '<canvas class="cicon" width="40" height="40"></canvas>' +
-          '<span class="cname">' + (landed ? UDM.escapeHtml(this.cardMeta(hand[i]).name) : '···') + '</span>' +
-          '</div>';
-      }
-      html += '<div class="spectate-note">Die Walzen drehen …</div>';
-      this.dom.hand.innerHTML = html;
-      this.paintReels(hand);
-    },
+      if (!roll) { return; }
+      var canvases = this.dom.slot.querySelectorAll('.slot-reel canvas');
+      for (var r = 0; r < canvases.length; r++) {
+        var reel = roll.reels[r];
+        if (!reel) { continue; }
+        var ctx = canvases[r].getContext('2d');
+        var w = canvases[r].width;
+        var h = canvases[r].height;
+        ctx.clearRect(0, 0, w, h);
+        ctx.fillStyle = '#f4f1e8';
+        ctx.fillRect(0, 0, w, h);
 
-    /** Symbole und Zustand der Walzen auffrischen, ohne alles neu zu bauen. */
-    paintReels: function (hand) {
-      var roll = this.roll;
-      var reels = this.dom.hand.querySelectorAll('[data-reel]');
-      for (var r = 0; r < reels.length; r++) {
-        var i = parseInt(reels[r].getAttribute('data-reel'), 10);
-        var landed = roll.landedAt[i] >= 0;
-        if (landed && reels[r].classList.contains('spinning')) {
-          reels[r].classList.remove('spinning');
-          reels[r].classList.add('landed');
-          reels[r].classList.toggle('power', this.isPowerUp(hand[i]));
-          reels[r].querySelector('.ckey').textContent = (this.isPowerUp(hand[i]) ? '★' : '') + (i + 1);
-          reels[r].querySelector('.cname').textContent = this.cardMeta(hand[i]).name;
+        var base = Math.floor(reel.pos);
+        ctx.save();
+        if (reel.speed > 9) { ctx.filter = 'blur(' + Math.min(3, reel.speed / 8).toFixed(1) + 'px)'; }
+        for (var k = base - 2; k <= base + 2; k++) {
+          if (k < 0 || k >= reel.strip.length) { continue; }
+          // Symbole wandern von oben nach unten durchs Fenster.
+          var y = h / 2 + (reel.pos - k) * SLOT_STEP;
+          if (y < -SLOT_ICON || y > h + SLOT_ICON) { continue; }
+          ctx.drawImage(this.slotIcon(reel.strip[k]), (w - SLOT_ICON) / 2, y - SLOT_ICON / 2);
         }
-        UDM.Render.drawCardIcon(reels[r].querySelector('canvas'), roll.shown[i], 0, this.time);
+        ctx.restore();
+
+        var shade = ctx.createLinearGradient(0, 0, 0, h);
+        shade.addColorStop(0, 'rgba(20,16,40,0.75)');
+        shade.addColorStop(0.28, 'rgba(20,16,40,0)');
+        shade.addColorStop(0.72, 'rgba(20,16,40,0)');
+        shade.addColorStop(1, 'rgba(20,16,40,0.75)');
+        ctx.fillStyle = shade;
+        ctx.fillRect(0, 0, w, h);
       }
     },
 
@@ -1369,6 +1465,8 @@
       // Pfeilfallen & Co. sind nur waehrend des Spiels zu hoeren - in Lobby,
       // Punkteansicht und nach dem Match ist Ruhe.
       UDM.Audio.ambient = this.phase === 'build' || this.phase === 'party';
+
+      if (this.phase !== 'build' && this.roll) { this.stopRoll(); }
 
       if (this.phase === 'build') {
         this.updateRoll(dt);

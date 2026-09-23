@@ -548,7 +548,7 @@
       level.burst(this.centerX(), this.centerY(), this.color, 22);
       level.burst(this.centerX(), this.centerY(), '#ff5566', 10);
     }
-    UDM.Audio.die();
+    if (cause === 'aufgabe') { UDM.Audio.giveUp(); } else { UDM.Audio.die(); }
     return { type: 'death', cause: cause, killerSlot: this.killerSlot, assistSlot: this.assistSlot };
   };
 

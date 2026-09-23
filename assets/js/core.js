@@ -220,6 +220,51 @@
     jump: function () { this.tone({ type: 'square', from: 330, to: 620, dur: 0.11, vol: 0.18 }); },
     bounce: function () { this.tone({ type: 'sine', from: 240, to: 880, dur: 0.18, vol: 0.26 }); },
     die: function () { this.tone({ type: 'sawtooth', from: 420, to: 60, dur: 0.35, vol: 0.25 }); this.noise(0.25, 0.18); },
+
+    /** Aufgeben: die traurige Posaune - wah, wah, wah, waaah. */
+    giveUp: function () {
+      if (!this.enabled) { return; }
+      this.init();
+      if (!this.ctx) { return; }
+      var ctx = this.ctx;
+      var start = ctx.currentTime + 0.02;
+      [[311, 0.3], [294, 0.3], [277, 0.3], [262, 0.95]].forEach(function (note, i) {
+        var at = start + i * 0.34;
+        var osc = ctx.createOscillator();
+        var filter = ctx.createBiquadFilter();
+        var gain = ctx.createGain();
+        osc.type = 'sawtooth';
+        osc.frequency.setValueAtTime(note[0], at);
+        filter.type = 'lowpass';
+        filter.frequency.setValueAtTime(900, at);
+        gain.gain.setValueAtTime(0.0001, at);
+        gain.gain.exponentialRampToValueAtTime(0.32, at + 0.04);
+        gain.gain.exponentialRampToValueAtTime(0.0001, at + note[1]);
+        if (i === 3) {
+          // Der letzte Ton wabert und sackt ab.
+          var lfo = ctx.createOscillator();
+          var depth = ctx.createGain();
+          lfo.frequency.value = 6;
+          depth.gain.value = 9;
+          lfo.connect(depth);
+          depth.connect(osc.frequency);
+          lfo.start(at);
+          lfo.stop(at + note[1] + 0.05);
+          osc.frequency.exponentialRampToValueAtTime(235, at + note[1]);
+        }
+        osc.connect(filter);
+        filter.connect(gain);
+        gain.connect(this.master);
+        osc.start(at);
+        osc.stop(at + note[1] + 0.05);
+      }, this);
+    },
+
+    /** Spielautomat: der Hebel rastet nach unten. */
+    lever: function () {
+      this.tone({ type: 'square', from: 160, to: 70, dur: 0.14, vol: 0.2 });
+      this.noise(0.09, 0.12);
+    },
     goal: function () {
       var self = this;
       [523, 659, 784, 1047].forEach(function (f, i) {
