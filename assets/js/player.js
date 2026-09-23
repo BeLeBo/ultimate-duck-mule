@@ -17,6 +17,8 @@
     this.remote = false;
     this.score = 0;
     this.hand = [];
+    // Power-ups, die in der naechsten Partyphase wirken (Kennungen).
+    this.buffs = [];
     this.reset(0, 0, 0);
   }
 
@@ -49,6 +51,31 @@
     this.confetti = 0;
     this.jumping = false;
     this.target = null;
+    // Wirkung der Power-ups - erst applyBuffs() schaltet sie ein.
+    this.airJumpsMax = 0;
+    this.airJumps = 0;
+    this.shield = 0;
+    this.invuln = 0;
+    this.speedMul = 1;
+    this.canGlide = false;
+    this.gliding = false;
+  };
+
+  /**
+   * Schaltet die Power-ups fuer diese Partyphase ein:
+   *   pu_djump  - ein zusaetzlicher Sprung in der Luft
+   *   pu_shield - faengt einen toedlichen Treffer ab (kein Absturz)
+   *   pu_speed  - schneller laufen
+   *   pu_glide  - Sprungtaste halten = langsam hinabschweben
+   */
+  Player.prototype.applyBuffs = function (buffs) {
+    this.buffs = (buffs || []).slice();
+    var has = function (id) { return this.buffs.indexOf(id) >= 0; }.bind(this);
+    this.airJumpsMax = has('pu_djump') ? 1 : 0;
+    this.airJumps = this.airJumpsMax;
+    this.shield = has('pu_shield') ? 1 : 0;
+    this.speedMul = has('pu_speed') ? P.turboFactor : 1;
+    this.canGlide = has('pu_glide');
   };
 
   Player.prototype.box = function () {
@@ -146,6 +173,8 @@
     this.coyote = this.onGround ? P.coyote : this.coyote - dt;
     this.wallLock -= dt;
     this.dropThrough -= dt;
+    this.invuln -= dt;
+    if (this.onGround) { this.airJumps = this.airJumpsMax; }
 
     this.assistTimer -= dt;
     if (this.assistTimer <= 0) {
@@ -154,10 +183,10 @@
     }
 
     // Waagerechte Steuerung (nach einem Wandsprung kurz gesperrt).
-    var maxSpeed = P.moveSpeed * (env.sticky ? P.stickyFactor : 1);
+    var maxSpeed = P.moveSpeed * this.speedMul * (env.sticky ? P.stickyFactor : 1);
     if (this.wallLock <= 0) {
       if (dir !== 0) {
-        var accel = (this.onGround ? P.accelGround : P.accelAir) * env.accel;
+        var accel = (this.onGround ? P.accelGround : P.accelAir) * env.accel * this.speedMul;
         this.vx = UDM.approach(this.vx, dir * maxSpeed, accel * dt);
         this.face = dir;
       } else {
@@ -174,6 +203,7 @@
     this.handleJump(input, env, level);
     this.applyJumpCut(input);
     this.applyGravity(dt, env);
+    this.applyGlide(input);
     this.applyStreams(dt, level);
 
     if (input.down && this.onGround && this.isOnOneWay(level)) {
@@ -211,6 +241,25 @@
       this.squash = 0.78;
       UDM.Audio.jump();
       level.burst(this.centerX() + this.wallDir * 10, this.centerY(), 'rgba(255,255,255,0.6)', 4);
+    } else if (this.airJumps > 0 && this.coyote < -P.airJumpDelay) {
+      // Doppelsprung (Power-up): einmal in der Luft abstossen. Erst nach
+      // einem Moment in der Luft - sonst verpufft er, wenn man kurz vor
+      // dem Aufsetzen (oder direkt beim Start) springt.
+      this.airJumps--;
+      this.vy = P.jumpVel * P.airJumpFactor;
+      this.buffer = 0;
+      this.jumping = true;
+      this.squash = 0.8;
+      UDM.Audio.jump();
+      level.burst(this.centerX(), this.y + this.h, 'rgba(160,255,170,0.8)', 8);
+    }
+  };
+
+  /** Gleitschirm (Power-up): Sprungtaste halten bremst den Fall. */
+  Player.prototype.applyGlide = function (input) {
+    this.gliding = this.canGlide && !this.onGround && input.jump && this.vy > P.glideFall * 0.5;
+    if (this.gliding) {
+      this.vy = Math.min(this.vy, P.glideFall);
     }
   };
 
@@ -372,6 +421,7 @@
   Player.prototype.updateAnim = function (dir) {
     if (!this.alive) { this.anim = 'dead'; return; }
     if (this.finished) { this.anim = 'done'; return; }
+    if (this.gliding) { this.anim = 'glide'; return; }
     if (!this.onGround) {
       if (this.wallDir !== 0 && this.vy > 0) { this.anim = 'wall'; }
       else { this.anim = this.vy < 0 ? 'jump' : 'fall'; }
@@ -396,8 +446,8 @@
     }
 
     // In der Startzone kann einem nichts passieren - weder Pendel noch
-    // Pfeil noch Saege.
-    if (level.inSafeZone(this.centerX(), this.centerY())) {
+    // Pfeil noch Saege. Gleich nach einem Schildtreffer auch nicht.
+    if (level.inSafeZone(this.centerX(), this.centerY()) || this.invuln > 0) {
       return null;
     }
 
@@ -405,21 +455,21 @@
       var hazard = level.hazards[i];
       if (hazard.cell && hazard.cell.broken) { continue; }
       if (UDM.overlaps(box, hazard.rect)) {
-        return this.kill(hazard.cause, hazard.ownerSlot, level, hazard.blockId);
+        return this.hit(hazard.cause, hazard.ownerSlot, level, hazard.blockId);
       }
     }
 
     for (i = 0; i < level.saws.length; i++) {
       var saw = level.saws[i];
       if (this.circleHit(saw.x, saw.y, saw.radius)) {
-        return this.kill('saege', saw.ownerSlot, level, saw.blockId);
+        return this.hit('saege', saw.ownerSlot, level, saw.blockId);
       }
     }
 
     for (i = 0; i < level.wreckers.length; i++) {
       var wrecker = level.wreckers[i];
       if (this.circleHit(wrecker.x, wrecker.y, wrecker.radius)) {
-        return this.kill('pendel', wrecker.ownerSlot, level, wrecker.blockId);
+        return this.hit('pendel', wrecker.ownerSlot, level, wrecker.blockId);
       }
     }
 
@@ -427,11 +477,32 @@
       var p = level.projectiles[i];
       if (UDM.overlaps(box, p)) {
         level.projectiles.splice(i, 1);
-        return this.kill('pfeil', p.ownerSlot, level, p.blockId);
+        return this.hit('pfeil', p.ownerSlot, level, p.blockId);
       }
     }
 
     return null;
+  };
+
+  /**
+   * Toedlicher Treffer durch eine Falle. Ein Schutzschild (Power-up) faengt
+   * ihn ab: Schild weg, kurz unverwundbar, und die Figur wird hochgeworfen.
+   */
+  Player.prototype.hit = function (cause, ownerSlot, level, blockId) {
+    if (this.shield <= 0) {
+      return this.kill(cause, ownerSlot, level, blockId);
+    }
+    this.shield = 0;
+    this.invuln = P.shieldGrace;
+    this.vy = Math.min(this.vy, P.shieldKnock);
+    this.onGround = false;
+    this.squash = 0.7;
+    if (level) {
+      level.burst(this.centerX(), this.centerY(), '#8fd0ff', 20);
+      level.burst(this.centerX(), this.centerY(), '#ffffff', 8);
+    }
+    UDM.Audio.bounce();
+    return { type: 'shield', cause: cause };
   };
 
   Player.prototype.circleHit = function (cx, cy, r) {
@@ -502,6 +573,7 @@
     this.target = pos;
     this.face = pos.face < 0 ? -1 : 1;
     this.anim = pos.anim || 'idle';
+    this.shield = pos.shield ? 1 : 0;
     this.alive = pos.anim !== 'dead';
     this.finished = pos.anim === 'done';
   };

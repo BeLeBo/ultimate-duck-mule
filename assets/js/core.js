@@ -37,7 +37,22 @@
     stickyFactor: 0.45,
     bounceMin: 680,
     playerW: 22,
-    playerH: 26
+    playerH: 26,
+    // Power-ups
+    airJumpFactor: 0.9,  // Doppelsprung: etwas schwaecher als der Bodensprung
+    airJumpDelay: 0.05,  // Doppelsprung: fruehestens so lange nach Coyote-Ende
+    turboFactor: 1.3,    // Turbo: Laufgeschwindigkeit und Beschleunigung
+    glideFall: 95,       // Gleitschirm: hoechste Fallgeschwindigkeit
+    shieldKnock: -470,   // Schild: Hochwurf nach dem abgefangenen Treffer
+    shieldGrace: 1.3     // Schild: so lange danach unverwundbar (Sek.)
+  };
+
+  /** Kurzzeichen der Power-ups fuer die Spielerleiste. */
+  UDM.BUFF_BADGES = {
+    pu_djump: '⇈',
+    pu_shield: '◈',
+    pu_speed: '»',
+    pu_glide: '☂'
   };
 
   /* ------------------------------------------------------------ Spieler */

@@ -120,44 +120,59 @@ final class Cards
     ];
 
     /**
-     * Power-ups: Karten, die kein Bauteil setzen, sondern den eigenen Zug
-     * verbessern. Sie liegen zusaetzlich zu den Bauteilen auf der Hand.
+     * Power-ups: Karten, die kein Bauteil setzen, sondern dem eigenen Spieler
+     * helfen. Sie liegen zusaetzlich zu den Bauteilen auf der Hand.
      *
-     * @var array<string, array{name:string, desc:string, weight:int, target:bool}>
+     * kind "buff":   wirkt in der folgenden Partyphase auf die eigene Figur.
+     * kind "target": braucht ein Ziel im Level (x/y), wirkt sofort.
+     *
+     * @var array<string, array{name:string, desc:string, weight:int, kind:string}>
      */
     public const POWERUPS = [
-        'pu_extra' => [
-            'name' => 'Doppelbau',
-            'desc' => 'Du darfst in diesem Zug ein Bauteil mehr setzen.',
+        'pu_djump' => [
+            'name' => 'Doppelsprung',
+            'desc' => 'Diese Runde springst du einmal zusätzlich in der Luft.',
+            'weight' => 5,
+            'kind' => 'buff',
+        ],
+        'pu_shield' => [
+            'name' => 'Schutzschild',
+            'desc' => 'Fängt diese Runde einen tödlichen Treffer ab – Stacheln, Säge, Pendel oder Pfeil. Gegen Abstürze hilft er nicht.',
             'weight' => 4,
-            'target' => false,
+            'kind' => 'buff',
+        ],
+        'pu_speed' => [
+            'name' => 'Turbo',
+            'desc' => 'Diese Runde rennst du ein gutes Stück schneller.',
+            'weight' => 4,
+            'kind' => 'buff',
+        ],
+        'pu_glide' => [
+            'name' => 'Gleitschirm',
+            'desc' => 'Diese Runde: Sprungtaste in der Luft halten und langsam hinabschweben.',
+            'weight' => 4,
+            'kind' => 'buff',
         ],
         'pu_remove' => [
             'name' => 'Abrissbirne',
-            'desc' => 'Eine zusätzliche Löschung: entferne ein Bauteil deiner Wahl.',
-            'weight' => 4,
-            'target' => false,
-        ],
-        'pu_bomb' => [
-            'name' => 'Sprengladung',
-            'desc' => 'Räumt alle Bauteile in einem 3×3-Feld deiner Wahl.',
-            'weight' => 2,
-            'target' => true,
-        ],
-        'pu_redraw' => [
-            'name' => 'Neue Karten',
-            'desc' => 'Wirf deine übrigen Karten ab und ziehe neue.',
-            'weight' => 3,
-            'target' => false,
+            'desc' => 'Entferne ein liegendes Bauteil deiner Wahl.',
+            'weight' => 5,
+            'kind' => 'target',
         ],
     ];
 
     /** Chance (in Prozent), dass die letzte Handkarte ein Power-up ist. */
-    public const POWERUP_CHANCE = 40;
+    public const POWERUP_CHANCE = 50;
 
     public static function isPowerUp(string $id): bool
     {
         return isset(self::POWERUPS[$id]);
+    }
+
+    /** Wirkt das Power-up erst in der Partyphase auf die eigene Figur? */
+    public static function isBuff(string $id): bool
+    {
+        return (self::POWERUPS[$id]['kind'] ?? '') === 'buff';
     }
 
     /** @return list<string> */

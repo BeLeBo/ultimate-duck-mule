@@ -363,7 +363,10 @@ label { display: block; font-size: 13px; color: var(--muted); margin-bottom: 5px
   position: absolute;
   inset: 0;
   display: flex;
-  align-items: center;
+  /* Nicht align-items:center - sonst ist bei zu hohem Inhalt der obere
+     Teil abgeschnitten und nicht mehr erreichbar. margin:auto am Panel
+     zentriert trotzdem, solange alles passt. */
+  align-items: flex-start;
   justify-content: center;
   padding: 16px;
   background: rgba(8, 9, 22, 0.72);
@@ -372,7 +375,7 @@ label { display: block; font-size: 13px; color: var(--muted); margin-bottom: 5px
   z-index: 5;
   overflow: auto;
 }
-.overlay .panel { max-width: 640px; width: 100%; text-align: center; }
+.overlay .panel { max-width: 640px; width: 100%; text-align: center; margin: auto; }
 .overlay.rules .panel { max-width: 760px; text-align: left; }
 .overlay .panel h2 { font-size: clamp(22px, 3vw, 34px); }
 .overlay .link { display: inline-block; margin-top: 12px; font-size: 14px; }
@@ -446,15 +449,23 @@ label { display: block; font-size: 13px; color: var(--muted); margin-bottom: 5px
   font-size: 14px;
 }
 
-/* Bauphase: Kontingent und Löschen-Knopf */
+/* Bauphase: Kontingent */
 .quota { font-size: 12px; color: var(--muted); }
 .quota b { color: var(--text); }
 
-.card.erase.selected {
-  border-color: var(--bad);
-  background: rgba(255, 95, 109, 0.18);
+/* Power-ups, die diese Runde wirken */
+.pbuff {
+  display: inline-block;
+  min-width: 16px;
+  padding: 0 4px;
+  border-radius: 6px;
+  background: rgba(170, 120, 255, 0.35);
+  color: #efe4ff;
+  font-size: 11px;
+  font-weight: 800;
+  line-height: 16px;
+  text-align: center;
 }
-.card.erase .rot-icon { color: var(--bad); }
 
 /* Aufgeben-Knopf im Kopfbereich */
 #btn-giveup {
@@ -530,10 +541,46 @@ label { display: block; font-size: 13px; color: var(--muted); margin-bottom: 5px
   color: var(--muted);
 }
 
-/* Lobby mit Weltauswahl */
-.overlay.lobby-overlay .panel { max-width: 760px; }
-.lobby-label { text-align: left; margin-top: 4px; }
-.lobby-picker { grid-template-columns: repeat(auto-fill, minmax(104px, 1fr)); text-align: left; }
-.lobby-picker .lvl { font-size: 11px; }
-#lobby-target { max-width: 140px; margin-bottom: 16px; display: block; }
-.lobby-settings { margin: 0 0 16px; }
+/* Lobby: kompakt in zwei Spalten */
+.overlay.lobby-overlay .panel { max-width: 860px; padding: 16px 18px; }
+.lobby-head { display: flex; align-items: baseline; justify-content: space-between; gap: 12px; flex-wrap: wrap; margin-bottom: 10px; }
+.lobby-head h2 { margin: 0; font-size: 22px; }
+.room-code { color: var(--accent); letter-spacing: 3px; }
+.lobby-grid { display: grid; grid-template-columns: 276px 1fr; gap: 16px; text-align: left; }
+.lobby-side { display: flex; flex-direction: column; }
+.lobby-label { font-size: 12px; color: var(--muted); margin: 0 0 5px; text-transform: none; }
+.lobby-label b { color: var(--text); }
+.lobby .lobby-list { margin-bottom: 12px; gap: 5px; }
+.lobby .lobby-list li { padding: 6px 10px; font-size: 14px; gap: 7px; min-width: 0; }
+.lobby .lobby-list li.offline { opacity: 0.5; }
+.lobby .lobby-list .lname { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.lobby .lobby-list em { font-size: 11px; }
+.lobby .lobby-list small { font-size: 11px; }
+.chips { display: flex; flex-wrap: wrap; gap: 4px; margin-bottom: 4px; }
+.chip {
+  min-width: 32px;
+  padding: 4px 6px;
+  border-radius: 8px;
+  background: rgba(0, 0, 0, 0.25);
+  border: 2px solid var(--line);
+  color: var(--text);
+  box-shadow: none;
+  font-weight: 800;
+  font-size: 13px;
+}
+.chip:hover { border-color: rgba(255, 255, 255, 0.3); }
+.chip.on, .chip.on:hover { border-color: var(--accent); background: rgba(255, 203, 61, 0.16); }
+.lobby-note { margin: 4px 0 10px; }
+.lobby-value { margin: 0 0 8px; }
+.overlay .lobby .big { margin: 6px 0 0; width: 100%; }
+/* minmax(0, 1fr): alle Spalten gleich breit, egal wie lang der Weltname ist */
+.lobby-picker { grid-template-columns: repeat(5, minmax(0, 1fr)); gap: 6px; margin-bottom: 0; }
+.lobby-picker .lvl { font-size: 11px; padding: 4px; gap: 3px; min-width: 0; }
+.lobby-picker .lvl-name { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.lobby-preview { max-width: 420px; border-radius: 10px; }
+span.lobby-preview { font-size: 60px; }
+
+@media (max-width: 700px) {
+  .lobby-grid { grid-template-columns: 1fr; }
+  .lobby-picker { grid-template-columns: repeat(auto-fill, minmax(90px, 1fr)); }
+}

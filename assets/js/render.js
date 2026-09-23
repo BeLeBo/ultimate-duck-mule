@@ -254,15 +254,78 @@
       ctx.lineCap = 'round';
       ctx.lineJoin = 'round';
 
-      if (type === 'pu_extra') {
-        // Zwei gestapelte Bloecke mit Plus
-        ctx.fillStyle = '#9aa2b1';
-        ctx.fillRect(cx - 13 * u, cy + 1 * u, 12 * u, 12 * u);
-        ctx.fillStyle = '#b6bdc9';
-        ctx.fillRect(cx - 7 * u, cy - 11 * u, 12 * u, 12 * u);
-        ctx.fillStyle = '#7ef08a';
-        ctx.fillRect(cx + 5 * u, cy + 2 * u, 12 * u, 4 * u);
-        ctx.fillRect(cx + 9 * u, cy - 2 * u, 4 * u, 12 * u);
+      if (type === 'pu_djump') {
+        // Zwei Pfeilspitzen nach oben ueber einem Woelkchen
+        ctx.fillStyle = 'rgba(255,255,255,0.45)';
+        ctx.beginPath();
+        ctx.ellipse(cx, cy + 14 * u, 10 * u, 3.5 * u, 0, 0, Math.PI * 2);
+        ctx.fill();
+        ctx.strokeStyle = '#7ef08a';
+        ctx.lineWidth = 4 * u;
+        ctx.beginPath();
+        ctx.moveTo(cx - 10 * u, cy + 8 * u);
+        ctx.lineTo(cx, cy - 1 * u);
+        ctx.lineTo(cx + 10 * u, cy + 8 * u);
+        ctx.moveTo(cx - 10 * u, cy - 4 * u);
+        ctx.lineTo(cx, cy - 13 * u);
+        ctx.lineTo(cx + 10 * u, cy - 4 * u);
+        ctx.stroke();
+      } else if (type === 'pu_shield') {
+        // Wappenschild
+        ctx.beginPath();
+        ctx.moveTo(cx, cy - 15 * u);
+        ctx.quadraticCurveTo(cx + 7 * u, cy - 10 * u, cx + 13 * u, cy - 11 * u);
+        ctx.quadraticCurveTo(cx + 13 * u, cy + 6 * u, cx, cy + 15 * u);
+        ctx.quadraticCurveTo(cx - 13 * u, cy + 6 * u, cx - 13 * u, cy - 11 * u);
+        ctx.quadraticCurveTo(cx - 7 * u, cy - 10 * u, cx, cy - 15 * u);
+        ctx.closePath();
+        ctx.fillStyle = '#4aa8ff';
+        ctx.fill();
+        ctx.strokeStyle = '#d8f0ff';
+        ctx.lineWidth = 2.5 * u;
+        ctx.stroke();
+        ctx.fillStyle = 'rgba(255,255,255,0.35)';
+        ctx.fillRect(cx - 2 * u, cy - 10 * u, 4 * u, 20 * u);
+      } else if (type === 'pu_speed') {
+        // Blitz mit Tempostreifen
+        ctx.strokeStyle = 'rgba(255,255,255,0.5)';
+        ctx.lineWidth = 2 * u;
+        ctx.beginPath();
+        ctx.moveTo(cx - 17 * u, cy - 6 * u); ctx.lineTo(cx - 9 * u, cy - 6 * u);
+        ctx.moveTo(cx - 19 * u, cy + 1 * u); ctx.lineTo(cx - 11 * u, cy + 1 * u);
+        ctx.moveTo(cx - 17 * u, cy + 8 * u); ctx.lineTo(cx - 9 * u, cy + 8 * u);
+        ctx.stroke();
+        ctx.fillStyle = '#ffd23f';
+        ctx.beginPath();
+        ctx.moveTo(cx + 5 * u, cy - 16 * u);
+        ctx.lineTo(cx - 7 * u, cy + 2 * u);
+        ctx.lineTo(cx + 1 * u, cy + 2 * u);
+        ctx.lineTo(cx - 2 * u, cy + 16 * u);
+        ctx.lineTo(cx + 11 * u, cy - 3 * u);
+        ctx.lineTo(cx + 3 * u, cy - 3 * u);
+        ctx.closePath();
+        ctx.fill();
+      } else if (type === 'pu_glide') {
+        // Schirm
+        ctx.fillStyle = '#ff8fb0';
+        ctx.beginPath();
+        ctx.arc(cx, cy - 1 * u, 15 * u, Math.PI, Math.PI * 2);
+        ctx.closePath();
+        ctx.fill();
+        ctx.fillStyle = '#ffd1df';
+        ctx.beginPath();
+        ctx.moveTo(cx, cy - 16 * u);
+        ctx.lineTo(cx - 5 * u, cy - 1 * u);
+        ctx.lineTo(cx + 5 * u, cy - 1 * u);
+        ctx.closePath();
+        ctx.fill();
+        ctx.strokeStyle = '#e8e8f0';
+        ctx.lineWidth = 2 * u;
+        ctx.beginPath();
+        ctx.moveTo(cx, cy - 1 * u);
+        ctx.lineTo(cx, cy + 12 * u);
+        ctx.quadraticCurveTo(cx, cy + 16 * u, cx - 4 * u, cy + 15 * u);
+        ctx.stroke();
       } else if (type === 'pu_remove') {
         // Abrissbirne an der Kette
         ctx.strokeStyle = '#8b92a5';
@@ -277,44 +340,6 @@
         ctx.fill();
         ctx.fillStyle = '#ff6f7d';
         ctx.fillRect(cx + 1 * u, cy + 4 * u, 8 * u, 2.5 * u);
-      } else if (type === 'pu_bomb') {
-        // Bombe mit Zuendschnur und Funken
-        ctx.fillStyle = '#2b2d3a';
-        ctx.beginPath();
-        ctx.arc(cx - 2 * u, cy + 4 * u, 11 * u, 0, Math.PI * 2);
-        ctx.fill();
-        ctx.fillStyle = 'rgba(255,255,255,0.25)';
-        ctx.beginPath();
-        ctx.arc(cx - 6 * u, cy, 3 * u, 0, Math.PI * 2);
-        ctx.fill();
-        ctx.strokeStyle = '#c9a063';
-        ctx.lineWidth = 2 * u;
-        ctx.beginPath();
-        ctx.moveTo(cx + 5 * u, cy - 5 * u);
-        ctx.quadraticCurveTo(cx + 9 * u, cy - 13 * u, cx + 14 * u, cy - 12 * u);
-        ctx.stroke();
-        ctx.fillStyle = '#ffd23f';
-        ctx.beginPath();
-        ctx.arc(cx + 15 * u, cy - 13 * u, 3 * u, 0, Math.PI * 2);
-        ctx.fill();
-      } else if (type === 'pu_redraw') {
-        // Zwei Karten mit Kreispfeil
-        ctx.fillStyle = 'rgba(255,255,255,0.25)';
-        ctx.fillRect(cx - 13 * u, cy - 12 * u, 13 * u, 18 * u);
-        ctx.fillStyle = 'rgba(255,255,255,0.55)';
-        ctx.fillRect(cx - 7 * u, cy - 7 * u, 13 * u, 18 * u);
-        ctx.strokeStyle = '#7fd6ff';
-        ctx.lineWidth = 2.5 * u;
-        ctx.beginPath();
-        ctx.arc(cx + 7 * u, cy + 2 * u, 8 * u, -0.4 * Math.PI, 1.1 * Math.PI);
-        ctx.stroke();
-        ctx.fillStyle = '#7fd6ff';
-        ctx.beginPath();
-        ctx.moveTo(cx + 9 * u, cy - 10 * u);
-        ctx.lineTo(cx + 15 * u, cy - 5 * u);
-        ctx.lineTo(cx + 7 * u, cy - 3 * u);
-        ctx.closePath();
-        ctx.fill();
       }
       ctx.restore();
     },
@@ -934,7 +959,11 @@
       var squash = p.squash || 1;
       var stretch = 1 / squash;
 
+      if (p.alive && !p.finished) { this.drawBuffsBehind(ctx, p, time); }
+
       ctx.save();
+      // Nach einem Schildtreffer kurz blinken.
+      if (p.invuln > 0 && Math.floor(time * 14) % 2 === 0) { ctx.globalAlpha = 0.45; }
 
       if (!p.alive) {
         var t = UDM.clamp(p.deathTimer / 1.2, 0, 1);
@@ -987,6 +1016,8 @@
 
       ctx.restore();
 
+      if (p.alive && !p.finished) { this.drawBuffsFront(ctx, p, time); }
+
       if (showNames) {
         var labelY = p.y - 12 - (p.slot % 4) * 11;
         ctx.font = 'bold 11px system-ui, sans-serif';
@@ -996,6 +1027,75 @@
         ctx.fillStyle = p.color;
         ctx.fillText(p.name, cx, labelY);
         ctx.textAlign = 'left';
+      }
+    },
+
+    /** Turbo-Streifen hinter der Figur. */
+    drawBuffsBehind: function (ctx, p, time) {
+      var turbo = (p.speedMul || 1) > 1 || (p.remote && p.buffs && p.buffs.indexOf('pu_speed') >= 0);
+      if (!turbo || Math.abs(p.vx || 0) < 150) { return; }
+      var dir = p.vx > 0 ? -1 : 1;
+      var back = dir < 0 ? p.x : p.x + p.w;
+      ctx.save();
+      ctx.strokeStyle = 'rgba(255,210,63,0.75)';
+      ctx.lineWidth = 2;
+      ctx.lineCap = 'round';
+      for (var i = 0; i < 3; i++) {
+        var y = p.y + 6 + i * 7;
+        var len = 8 + ((time * 40 + i * 5) % 8);
+        ctx.beginPath();
+        ctx.moveTo(back + dir * 3, y);
+        ctx.lineTo(back + dir * (3 + len), y);
+        ctx.stroke();
+      }
+      ctx.restore();
+    },
+
+    /** Schildblase und Gleitschirm vor der Figur. */
+    drawBuffsFront: function (ctx, p, time) {
+      var cx = p.x + p.w / 2;
+      var cy = p.y + p.h / 2;
+
+      if (p.anim === 'glide') {
+        var top = p.y - 22;
+        ctx.save();
+        ctx.strokeStyle = 'rgba(235,235,245,0.85)';
+        ctx.lineWidth = 1.5;
+        ctx.beginPath();
+        ctx.moveTo(cx - 15, top); ctx.lineTo(cx - 4, p.y + 4);
+        ctx.moveTo(cx + 15, top); ctx.lineTo(cx + 4, p.y + 4);
+        ctx.moveTo(cx, top - 2); ctx.lineTo(cx, p.y + 2);
+        ctx.stroke();
+        ctx.fillStyle = '#ff8fb0';
+        ctx.beginPath();
+        ctx.arc(cx, top + 2, 17, Math.PI, Math.PI * 2);
+        ctx.closePath();
+        ctx.fill();
+        ctx.fillStyle = 'rgba(255,255,255,0.35)';
+        ctx.beginPath();
+        ctx.moveTo(cx, top - 15);
+        ctx.lineTo(cx - 5, top + 2);
+        ctx.lineTo(cx + 5, top + 2);
+        ctx.closePath();
+        ctx.fill();
+        ctx.restore();
+      }
+
+      if (p.shield > 0) {
+        var r = Math.max(p.w, p.h) * 0.78 + Math.sin(time * 5) * 1.2;
+        ctx.save();
+        ctx.fillStyle = 'rgba(120,195,255,0.13)';
+        ctx.strokeStyle = 'rgba(150,215,255,0.85)';
+        ctx.lineWidth = 2;
+        ctx.beginPath();
+        ctx.arc(cx, cy, r, 0, Math.PI * 2);
+        ctx.fill();
+        ctx.stroke();
+        ctx.strokeStyle = 'rgba(255,255,255,0.6)';
+        ctx.beginPath();
+        ctx.arc(cx, cy, r - 4, -2.4, -1.6);
+        ctx.stroke();
+        ctx.restore();
       }
     },
 
@@ -1375,36 +1475,28 @@
         var spanW = ((ghostSpec && ghostSpec.w) || 1) * TILE;
         var spanH = ((ghostSpec && ghostSpec.h) || 1) * TILE;
 
-        if (build.bombing) {
-          // Sprengladung: 3x3-Feld, erwischte Bauteile leuchten auf.
-          var bx = (build.tx - 1) * TILE;
-          var by = (build.ty - 1) * TILE;
-          var pulse = 0.18 + 0.08 * Math.sin(state.time * 10);
-          ctx.fillStyle = 'rgba(255,140,40,' + pulse + ')';
-          ctx.fillRect(bx, by, TILE * 3, TILE * 3);
-          level.blocks.forEach(function (cell) {
-            var hit = cell.tx <= build.tx + 1 && cell.tx + (cell.w || 1) - 1 >= build.tx - 1 &&
-              cell.ty <= build.ty + 1 && cell.ty + (cell.h || 1) - 1 >= build.ty - 1;
-            if (!hit) { return; }
-            ctx.fillStyle = 'rgba(255,70,40,0.4)';
-            ctx.fillRect(cell.tx * TILE, cell.ty * TILE, (cell.w || 1) * TILE, (cell.h || 1) * TILE);
-          });
-          ctx.setLineDash([6, 4]);
-          ctx.lineWidth = 3;
-          ctx.strokeStyle = ok ? 'rgba(255,170,60,0.95)' : 'rgba(255,255,255,0.35)';
-          ctx.strokeRect(bx + 1.5, by + 1.5, TILE * 3 - 3, TILE * 3 - 3);
-          ctx.setLineDash([]);
-          ctx.lineWidth = 1;
-        } else if (build.deleting) {
-          // Loeschvorschau: das getroffene Bauteil rot durchgestrichen.
+        if (build.deleting) {
+          // Abrissbirne: das ganze getroffene Bauteil rot durchgestrichen,
+          // auch wenn es mehrere Kacheln belegt.
+          var target = level.cell(build.tx, build.ty);
+          var rx = x;
+          var ry = y;
+          var rw = TILE;
+          var rh = TILE;
+          if (ok && target && target.kind === 'block') {
+            rx = target.tx * TILE;
+            ry = target.ty * TILE;
+            rw = (target.w || 1) * TILE;
+            rh = (target.h || 1) * TILE;
+          }
           ctx.fillStyle = ok ? 'rgba(255,80,80,0.3)' : 'rgba(255,255,255,0.07)';
-          ctx.fillRect(x, y, TILE, TILE);
+          ctx.fillRect(rx, ry, rw, rh);
           ctx.strokeStyle = ok ? 'rgba(255,90,90,0.95)' : 'rgba(255,255,255,0.3)';
           ctx.lineWidth = 3;
-          ctx.strokeRect(x + 1.5, y + 1.5, TILE - 3, TILE - 3);
+          ctx.strokeRect(rx + 1.5, ry + 1.5, rw - 3, rh - 3);
           ctx.beginPath();
-          ctx.moveTo(x + 8, y + 8); ctx.lineTo(x + TILE - 8, y + TILE - 8);
-          ctx.moveTo(x + TILE - 8, y + 8); ctx.lineTo(x + 8, y + TILE - 8);
+          ctx.moveTo(rx + 8, ry + 8); ctx.lineTo(rx + rw - 8, ry + rh - 8);
+          ctx.moveTo(rx + rw - 8, ry + 8); ctx.lineTo(rx + 8, ry + rh - 8);
           ctx.stroke();
           ctx.lineWidth = 1;
         } else {

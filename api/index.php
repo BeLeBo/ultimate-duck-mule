@@ -107,9 +107,11 @@ function heartbeat(array &$room, string $token, array $data): void
             'vx' => round((float) ($pos['vx'] ?? 0), 1),
             'vy' => round((float) ($pos['vy'] ?? 0), 1),
             'face' => ((float) ($pos['face'] ?? 1)) < 0 ? -1 : 1,
-            'anim' => in_array($pos['anim'] ?? '', ['idle', 'run', 'jump', 'fall', 'wall', 'dead', 'done'], true)
+            'anim' => in_array($pos['anim'] ?? '', ['idle', 'run', 'jump', 'fall', 'wall', 'glide', 'dead', 'done'], true)
                 ? (string) $pos['anim']
                 : 'idle',
+            // Schutzschild noch da? Die anderen sehen dann die Blase.
+            'shield' => (bool) ($pos['shield'] ?? false),
             't' => microtime(true),
         ];
     }
@@ -121,8 +123,8 @@ function heartbeat(array &$room, string $token, array $data): void
             'slot' => (int) $room['players'][$token]['slot'],
             'card' => max(-1, min(8, (int) ($build['card'] ?? -1))),
             'rot' => (((int) ($build['rot'] ?? 0)) % 4 + 4) % 4,
+            // Zielt gerade mit der Abrissbirne.
             'deleting' => (bool) ($build['deleting'] ?? false),
-            'bombing' => (bool) ($build['bombing'] ?? false),
             'tx' => max(-1, min(Levels::COLS - 1, (int) ($build['tx'] ?? -1))),
             'ty' => max(-1, min(Levels::ROWS - 1, (int) ($build['ty'] ?? -1))),
         ];
@@ -139,7 +141,7 @@ try {
         case 'create':
             Rooms::sweep();
             $code = Rooms::newCode();
-            $room = Game::newRoom($code, int_field($data, 'target', Game::DEFAULT_TARGET), str_field($data, 'level') ?: null);
+            $room = Game::newRoom($code, int_field($data, 'rounds', Game::DEFAULT_ROUNDS), str_field($data, 'level') ?: null);
             $token = Game::addPlayer($room, str_field($data, 'name'), str_field($data, 'char'));
             Rooms::create($room);
             respond([
@@ -231,25 +233,6 @@ try {
             respond(['ok' => true, 'state' => Game::publicState($room, $token)]);
             // no break
 
-        case 'remove':
-            [$code, $token] = credentials($data);
-            $error = null;
-            $room = Rooms::mutate($code, function (array $room) use ($token, $data, &$error): array {
-                heartbeat($room, $token, $data);
-                try {
-                    Game::removeBlock($room, $token, int_field($data, 'x', -1), int_field($data, 'y', -1));
-                } catch (Throwable $e) {
-                    $error = $e->getMessage();
-                }
-
-                return $room;
-            });
-            if ($error !== null) {
-                respond(['ok' => false, 'error' => $error, 'state' => Game::publicState($room, $token)], 409);
-            }
-            respond(['ok' => true, 'state' => Game::publicState($room, $token)]);
-            // no break
-
         case 'power':
             [$code, $token] = credentials($data);
             $error = null;
@@ -285,7 +268,7 @@ try {
                         $room,
                         $token,
                         str_field($data, 'level'),
-                        int_field($data, 'target', Game::DEFAULT_TARGET)
+                        int_field($data, 'rounds', Game::DEFAULT_ROUNDS)
                     );
                 } catch (Throwable $e) {
                     $error = $e->getMessage();

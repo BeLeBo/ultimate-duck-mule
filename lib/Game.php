@@ -18,13 +18,17 @@ final class Game
     public const MIN_PLAYERS = 2;
     public const HAND_SIZE = 4;
 
-    /** Bauteile, die ein Spieler pro Runde setzen darf. */
+    /**
+     * Bauteile, die ein Spieler pro Runde setzen darf. Loeschen geht nur
+     * noch mit der Abrissbirne (Power-up).
+     */
     public const PLACES_PER_TURN = 1;
-
-    /** Bereits liegende Bauteile, die er dabei entfernen darf. */
-    public const REMOVES_PER_TURN = 1;
     public const MAX_BLOCKS = 320;
-    public const DEFAULT_TARGET = 10;
+
+    /** Ein Match dauert so viele Runden - danach gewinnt, wer vorne liegt. */
+    public const DEFAULT_ROUNDS = 8;
+    public const MIN_ROUNDS = 3;
+    public const MAX_ROUNDS = 30;
 
     /** Nach dieser Zeit wird eine haengende Partyphase notfalls beendet (Sek.). */
     public const PARTY_HARD_LIMIT = 100;
@@ -46,7 +50,7 @@ final class Game
     public const CHARACTERS = ['duck', 'mule', 'racoon', 'frog'];
 
     /** @return array<string, mixed> */
-    public static function newRoom(string $code, int $targetScore, ?string $levelId): array
+    public static function newRoom(string $code, int $rounds, ?string $levelId): array
     {
         return [
             'code' => $code,
@@ -58,7 +62,7 @@ final class Game
             'levelId' => $levelId !== null && Levels::byId($levelId) !== null ? $levelId : Levels::randomId(),
             // "Zufall" gewaehlt? Dann wird bei jedem Matchstart neu gewuerfelt.
             'randomLevel' => $levelId === null || Levels::byId($levelId) === null,
-            'targetScore' => max(3, min(30, $targetScore)),
+            'rounds' => self::clampRounds($rounds),
             'hostToken' => null,
             'order' => [],
             'turn' => 0,
@@ -99,7 +103,8 @@ final class Game
             'score' => 0,
             'hand' => [],
             'places' => 0,
-            'removes' => 0,
+            // Power-ups, die in der naechsten Partyphase wirken.
+            'buffs' => [],
             'placed' => false,
             'ready' => false,
             'result' => null,
@@ -131,7 +136,7 @@ final class Game
 
     /**
      * Nach dem Matchende zurueck in die Lobby: dort waehlt der Gastgeber Welt
-     * und Zielpunkte neu, und neue Mitspieler koennen noch beitreten.
+     * und Rundenzahl neu, und neue Mitspieler koennen noch beitreten.
      */
     public static function backToLobby(array &$room, string $token): void
     {
@@ -145,6 +150,7 @@ final class Game
         foreach ($room['players'] as &$player) {
             $player['score'] = 0;
             $player['hand'] = [];
+            $player['buffs'] = [];
             $player['ready'] = false;
             $player['result'] = null;
             $player['pos'] = null;
@@ -164,11 +170,11 @@ final class Game
     }
 
     /**
-     * Welt und Zielpunkte in der Lobby aendern - nur der Gastgeber.
+     * Welt und Rundenzahl in der Lobby aendern - nur der Gastgeber.
      *
      * @param array<string, mixed> $room
      */
-    public static function updateSettings(array &$room, string $token, string $levelId, int $target): void
+    public static function updateSettings(array &$room, string $token, string $levelId, int $rounds): void
     {
         if ($room['hostToken'] !== $token) {
             throw new RuntimeException('Nur der Gastgeber kann die Einstellungen ändern.');
@@ -184,8 +190,24 @@ final class Game
             $room['randomLevel'] = false;
             $room['levelId'] = $levelId;
         }
-        $room['targetScore'] = max(3, min(30, $target));
+        $room['rounds'] = self::clampRounds($rounds);
         self::touch($room);
+    }
+
+    public static function clampRounds(int $rounds): int
+    {
+        return max(self::MIN_ROUNDS, min(self::MAX_ROUNDS, $rounds));
+    }
+
+    /**
+     * Rundenzahl des Matches. Raeume aus aelteren Versionen kennen nur
+     * Zielpunkte - dann gilt der Standard.
+     *
+     * @param array<string, mixed> $room
+     */
+    public static function totalRounds(array $room): int
+    {
+        return self::clampRounds((int) ($room['rounds'] ?? self::DEFAULT_ROUNDS));
     }
 
     /**
@@ -227,7 +249,7 @@ final class Game
         foreach ($room['players'] as $token => &$player) {
             $player['hand'] = Cards::deal(self::HAND_SIZE);
             $player['places'] = self::PLACES_PER_TURN;
-            $player['removes'] = self::REMOVES_PER_TURN;
+            $player['buffs'] = [];
             $player['placed'] = !in_array($token, $active, true);
             $player['ready'] = false;
             $player['result'] = null;
@@ -350,8 +372,9 @@ final class Game
     }
 
     /**
-     * Setzt ein Power-up aus der Hand ein. Die Sprengladung braucht ein Ziel
-     * (x/y = Mitte des 3x3-Feldes), die anderen wirken sofort.
+     * Setzt ein Power-up aus der Hand ein. Die Abrissbirne braucht ein Ziel
+     * (x/y = Kachel des Bauteils), alle anderen wirken in der folgenden
+     * Partyphase auf die eigene Figur. Ein Power-up kostet keinen Bauzug.
      *
      * @param array<string, mixed> $room
      */
@@ -364,118 +387,49 @@ final class Game
             throw new RuntimeException('Du bist nicht am Zug.');
         }
 
-        $player = &$room['players'][$token];
-        $card = $player['hand'][$cardIndex] ?? null;
+        $card = $room['players'][$token]['hand'][$cardIndex] ?? null;
         if ($card === null || !Cards::isPowerUp($card)) {
             throw new RuntimeException('Diese Karte ist kein Power-up.');
         }
 
-        $message = '';
-        switch ($card) {
-            case 'pu_extra':
-                $player['places'] = (int) $player['places'] + 1;
-                $message = 'darf ein Bauteil mehr setzen';
-                break;
-
-            case 'pu_remove':
-                $player['removes'] = (int) $player['removes'] + 1;
-                $message = 'bekommt eine Löschung mehr';
-                break;
-
-            case 'pu_redraw':
-                $keep = count($player['hand']) - 1;
-                // Die Karte selbst ist gleich weg; der Rest wird neu gezogen.
-                $player['hand'] = array_merge([$card], Cards::dealBlocks(max(1, $keep)));
-                $cardIndex = 0;
-                $message = 'zieht neue Karten';
-                break;
-
-            case 'pu_bomb':
-                $removed = self::blastArea($room, $x, $y);
-                if ($removed === 0) {
-                    throw new RuntimeException('Da ist nichts zu sprengen.');
-                }
-                $message = 'sprengt ' . $removed . ' Bauteil' . ($removed === 1 ? '' : 'e') . ' weg';
-                break;
+        if ($card === 'pu_remove') {
+            $removed = self::removeBlockAt($room, $x, $y);
+            $message = 'reißt ' . (Cards::CATALOG[$removed['type']]['name'] ?? 'ein Bauteil') . ' ab';
+        } else {
+            $buffs = $room['players'][$token]['buffs'] ?? [];
+            if (!in_array($card, $buffs, true)) {
+                $buffs[] = $card;
+            }
+            $room['players'][$token]['buffs'] = $buffs;
+            $message = 'hat diese Runde ' . Cards::POWERUPS[$card]['name'];
         }
 
-        array_splice($player['hand'], $cardIndex, 1);
-        unset($player);
+        array_splice($room['players'][$token]['hand'], $cardIndex, 1);
 
         self::log($room, self::nameOf($room, $token) . ' ' . $message . '.');
         self::touch($room);
     }
 
     /**
-     * Raeumt alle Bauteile, die das 3x3-Feld um (x, y) beruehren.
+     * Entfernt das Bauteil, das die Kachel (x, y) belegt - eigenes oder
+     * fremdes. Es hinterlaesst einen Grabstein.
      *
      * @param array<string, mixed> $room
+     * @return array<string, mixed> das entfernte Bauteil
      */
-    public static function blastArea(array &$room, int $x, int $y): int
+    private static function removeBlockAt(array &$room, int $x, int $y): array
     {
-        $kept = [];
-        $removed = 0;
-        foreach ($room['blocks'] as $block) {
-            $size = Cards::size((string) $block['type']);
-            $hit = (int) $block['x'] <= $x + 1 && (int) $block['x'] + $size['w'] - 1 >= $x - 1
-                && (int) $block['y'] <= $y + 1 && (int) $block['y'] + $size['h'] - 1 >= $y - 1;
-            if ($hit) {
+        $id = self::occupiedTiles($room)[$x . ',' . $y] ?? null;
+        foreach ($room['blocks'] as $i => $block) {
+            if ($id !== null && (int) $block['id'] === $id) {
+                array_splice($room['blocks'], $i, 1);
                 self::addGrave($room, $block);
-                $removed++;
-            } else {
-                $kept[] = $block;
+
+                return $block;
             }
         }
-        $room['blocks'] = $kept;
 
-        return $removed;
-    }
-
-    /**
-     * Entfernt ein bereits liegendes Bauteil - eigenes oder fremdes.
-     *
-     * @param array<string, mixed> $room
-     */
-    public static function removeBlock(array &$room, string $token, int $x, int $y): void
-    {
-        if ($room['phase'] !== 'build') {
-            throw new RuntimeException('Gerade ist keine Bauphase.');
-        }
-        if (self::currentBuilder($room) !== $token) {
-            throw new RuntimeException('Du bist nicht am Zug.');
-        }
-
-        $player = &$room['players'][$token];
-        if ((int) $player['removes'] <= 0) {
-            throw new RuntimeException('Du hast deine Löschung schon verbraucht.');
-        }
-
-        $taken = self::occupiedTiles($room);
-        $id = $taken[$x . ',' . $y] ?? null;
-        $index = null;
-        if ($id !== null) {
-            foreach ($room['blocks'] as $i => $block) {
-                if ((int) $block['id'] === $id) {
-                    $index = $i;
-                    break;
-                }
-            }
-        }
-        if ($index === null) {
-            throw new RuntimeException('Da liegt kein Bauteil.');
-        }
-
-        $removed = $room['blocks'][$index];
-        array_splice($room['blocks'], $index, 1);
-        self::addGrave($room, $removed);
-        $player['removes'] = (int) $player['removes'] - 1;
-        unset($player);
-
-        self::log(
-            $room,
-            self::nameOf($room, $token) . ' entfernt ' . (Cards::CATALOG[$removed['type']]['name'] ?? 'ein Bauteil') . '.'
-        );
-        self::touch($room);
+        throw new RuntimeException('Da liegt kein Bauteil.');
     }
 
     /** @param array<string, mixed> $room */
@@ -731,19 +685,7 @@ final class Game
             unset($player);
         }
 
-        // Jedes Bauteil, das getoetet hat, ist damit verbraucht.
-        $spent = [];
-        foreach ($participants as $token) {
-            $result = $room['players'][$token]['result'] ?? null;
-            if ($result === null) {
-                continue;
-            }
-            foreach (['killerBlock', 'assistBlock'] as $key) {
-                if (!empty($result[$key])) {
-                    $spent[(int) $result[$key]] = true;
-                }
-            }
-        }
+        $spent = self::spentBlocks($room, $participants);
         $spentCount = 0;
         if ($spent !== []) {
             $kept = [];
@@ -757,7 +699,7 @@ final class Game
             }
             $room['blocks'] = $kept;
             if ($spentCount > 0) {
-                self::log($room, $spentCount . ' Bauteil(e) haben zugeschlagen und verschwinden.');
+                self::log($room, $spentCount . ' Bauteil(e) haben alle erwischt und verschwinden.');
             }
         }
 
@@ -788,23 +730,59 @@ final class Game
         $room['phase'] = 'score';
         $room['phaseStarted'] = time();
 
-        $winner = self::findWinner($room);
-        if ($winner !== null) {
+        // Nach der letzten Runde gewinnt, wer vorne liegt.
+        if ((int) $room['round'] >= self::totalRounds($room)) {
+            $winner = self::findWinner($room);
             $room['phase'] = 'over';
             $room['winner'] = $winner;
-            self::log($room, $winner['name'] . ' gewinnt das Match!');
+            $names = array_map(static fn (array $p): string => $p['name'], $winner['players']);
+            self::log($room, count($names) > 1
+                ? 'Unentschieden: ' . implode(' und ', $names) . '!'
+                : $names[0] . ' gewinnt das Match!');
         }
     }
 
     /**
+     * Ein Bauteil verschwindet nur, wenn es in dieser Runde jeden einzelnen
+     * Teilnehmer erwischt hat. Sonst bleibt es liegen - abraeumen geht dann
+     * nur mit der Abrissbirne.
+     *
      * @param array<string, mixed> $room
-     * @return array<string, mixed>|null
+     * @param list<string> $participants
+     * @return array<int, true> Bauteil-Kennung => true
      */
-    private static function findWinner(array $room): ?array
+    public static function spentBlocks(array $room, array $participants): array
     {
+        $kills = [];
+        foreach ($participants as $token) {
+            $block = $room['players'][$token]['result']['killerBlock'] ?? null;
+            if (!empty($block)) {
+                $kills[(int) $block] = ($kills[(int) $block] ?? 0) + 1;
+            }
+        }
+
+        $spent = [];
+        foreach ($kills as $id => $victims) {
+            if ($participants !== [] && $victims >= count($participants)) {
+                $spent[$id] = true;
+            }
+        }
+
+        return $spent;
+    }
+
+    /**
+     * Wer liegt vorne? Bei Gleichstand teilen sich alle den Sieg.
+     *
+     * @param array<string, mixed> $room
+     * @return array{score:int, players:list<array{slot:int, name:string, char:string}>}
+     */
+    private static function findWinner(array $room): array
+    {
+        $tokens = self::connectedTokens($room) ?: $room['order'];
         $best = -1;
         $bestTokens = [];
-        foreach (self::connectedTokens($room) as $token) {
+        foreach ($tokens as $token) {
             $score = (int) $room['players'][$token]['score'];
             if ($score > $best) {
                 $best = $score;
@@ -814,18 +792,14 @@ final class Game
             }
         }
 
-        if ($best >= (int) $room['targetScore'] && count($bestTokens) === 1) {
-            $token = $bestTokens[0];
-
-            return [
-                'slot' => $room['players'][$token]['slot'],
-                'name' => $room['players'][$token]['name'],
-                'char' => $room['players'][$token]['char'],
-                'score' => (int) $room['players'][$token]['score'],
-            ];
-        }
-
-        return null;
+        return [
+            'score' => max(0, $best),
+            'players' => array_map(static fn (string $token): array => [
+                'slot' => (int) $room['players'][$token]['slot'],
+                'name' => (string) $room['players'][$token]['name'],
+                'char' => (string) $room['players'][$token]['char'],
+            ], $bestTokens),
+        ];
     }
 
     /** @param array<string, mixed> $room */
@@ -1098,7 +1072,7 @@ final class Game
                 'handSize' => count($player['hand']),
                 'hand' => $showHand ? array_values($player['hand']) : [],
                 'places' => (int) ($player['places'] ?? 0),
-                'removes' => (int) ($player['removes'] ?? 0),
+                'buffs' => array_values($player['buffs'] ?? []),
                 'pos' => $player['pos'],
                 'result' => $player['result'],
             ];
@@ -1112,7 +1086,7 @@ final class Game
             'round' => (int) $room['round'],
             'levelId' => $room['levelId'],
             'randomLevel' => !empty($room['randomLevel']),
-            'targetScore' => (int) $room['targetScore'],
+            'rounds' => self::totalRounds($room),
             'turnSlot' => $builder !== null && isset($room['players'][$builder])
                 ? (int) $room['players'][$builder]['slot']
                 : null,

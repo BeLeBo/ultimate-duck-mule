@@ -15,21 +15,21 @@ also nur, um den anderen den Weg zu verderben.
 
 Jede Runde besteht aus zwei Phasen:
 
-1. **Bauphase** – Der Reihe nach setzt jeder Spieler *ein* Bauteil aus seiner Hand
-   und darf dabei *ein bereits liegendes entfernen* (Taste `X` oder Rechtsklick) –
-   egal von wem es stammt. Die Vorschau am Mauszeiger zeigt vorher, was das Bauteil
-   anrichtet. **Wer vorne liegt, baut zuerst** – wer hinten liegt, sieht alles und
-   hat das letzte Wort; Gleichstand entscheidet das Los. Alle anderen schauen dem
-   Bauenden live zu: Mauszeiger, Handkarten, gewählte Karte und Drehung.
+1. **Bauphase** – Der Reihe nach setzt jeder Spieler *ein* Bauteil aus seiner Hand.
+   Selbst löschen kann man nichts – das geht nur mit dem Power-up *Abrissbirne*.
+   Die Vorschau am Mauszeiger zeigt vorher, was das Bauteil anrichtet.
+   **Wer vorne liegt, baut zuerst** – wer hinten liegt, sieht alles und hat das
+   letzte Wort; Gleichstand entscheidet das Los. Alle anderen schauen dem Bauenden
+   live zu: Mauszeiger, Handkarten, gewählte Karte und Drehung.
 2. **Partyphase** – Alle starten gleichzeitig und versuchen, die Fahne zu erreichen.
    Wer stirbt, schaut den Rest der Runde zu; wer feststeckt, kann aufgeben.
 
-**Bauteile verbrauchen sich:** Jedes Bauteil, das in einer Runde jemanden erwischt
-hat, verschwindet danach wieder. Wer eine gute Falle stellt, bekommt die Punkte –
-behält die Falle aber nicht.
+**Bauteile bleiben liegen:** Ein Bauteil verschwindet nur, wenn es in einer Runde
+**alle Spieler** erwischt hat – eine Falle, an der jeder scheitert, räumt sich
+selbst ab. Alles andere bleibt, bis jemand die Abrissbirne darauf ansetzt.
 
-**Kein sofortiges Zurücksetzen:** Wird ein Bauteil entfernt – per Löschung, durch
-einen Kill oder eine Sprengladung –, darf bis zum Ende der nächsten Runde niemand
+**Kein sofortiges Zurücksetzen:** Wird ein Bauteil entfernt – durch die Abrissbirne
+oder weil es alle erwischt hat –, darf bis zum Ende der nächsten Runde niemand
 denselben Typ wieder auf diese Stelle setzen. Die gesperrten Stellen sind in der
 Bauphase als blasser Umriss zu sehen.
 
@@ -58,11 +58,11 @@ Fallenpunkte. Unter 0 Punkte geht es nicht.
 Kante schiebt, bekommt den Kill. Rutscht das Opfer in die Falle eines Dritten,
 bekommen **beide** einen Punkt – der Fallensteller und der Nachhelfer.
 
-Wer nach einer Runde die Zielpunktzahl (Standard: 10) erreicht hat **und allein
-vorne liegt**, gewinnt das Match – bei Gleichstand geht es weiter. **Nochmal
-spielen** führt zurück zu den Einstellungen: lokal ins Menü mit allen Angaben
-vorausgefüllt, online in die Lobby, wo der Gastgeber Welt und Zielpunkte neu wählt
-und weitere Mitspieler noch beitreten können.
+Ein Match dauert eine **feste Zahl an Runden** (wählbar 3–20, Standard 8). Wer nach
+der letzten Runde die meisten Punkte hat, gewinnt – bei Gleichstand teilen sich die
+Führenden den Sieg. **Nochmal spielen** führt zurück zu den Einstellungen: lokal ins
+Menü mit allen Angaben vorausgefüllt, online in die Lobby, wo der Gastgeber Welt und
+Rundenzahl neu wählt und weitere Mitspieler noch beitreten können.
 
 ## Starten
 
@@ -138,11 +138,11 @@ Erweiterung aus.
 | 4 | `F` / `H` oder Ziffernblock `4` / `6` | `T` oder `8` | `G` oder `5` |
 
 In der Bauphase platziert der Spieler, der am Zug ist, sein Bauteil mit der
-**Maus**: `1`–`4` wählt das Bauteil, `R` dreht es, `X` oder Rechtsklick entfernt
-ein liegendes. Die Vorschau am Mauszeiger zeigt vorher, was das Bauteil anrichtet –
-Reichweite des Luftstroms, Schussbahn, Pendelweg, Sägenschiene. Wer keine Maus
-benutzen will, bewegt den Bauzeiger mit den eigenen Laufen-/Springen-Tasten und
-platziert mit `Enter`.
+**Maus**: `1`–`4` wählt das Bauteil, `R` dreht es; Rechtsklick oder `Esc` bricht
+das Zielen mit der Abrissbirne ab. Die Vorschau am Mauszeiger zeigt vorher, was
+das Bauteil anrichtet – Reichweite des Luftstroms, Schussbahn, Pendelweg,
+Sägenschiene. Wer keine Maus benutzen will, bewegt den Bauzeiger mit den eigenen
+Laufen-/Springen-Tasten und platziert mit `Enter`.
 
 ### Online mit Raumcode
 
@@ -190,16 +190,22 @@ Besitzers – wichtig, weil Kills den Bauteil-Besitzer belohnen.
 
 ## Power-ups
 
-Mit etwas Glück (rund 40 %) ist die vierte Handkarte ein Power-up. Anklicken setzt
-es ein – am besten vor dem letzten Bauteil, denn das beendet den Zug. Wer nicht
-mehr bauen will, beendet seinen Zug mit **Zug beenden**.
+In etwa jeder zweiten Hand ist die vierte Karte ein Power-up. Power-ups helfen dem,
+der sie einsetzt. Anklicken setzt sie ein – sie kosten keinen Zug, müssen aber
+**vor** dem eigenen Bauteil kommen, denn das beendet den Zug. Wer nicht mehr bauen
+will, beendet seinen Zug mit **Zug beenden**.
 
 | Power-up | Wirkung |
 | --- | --- |
-| Doppelbau | Ein Bauteil mehr in diesem Zug |
-| Abrissbirne | Eine zusätzliche Löschung: ein Bauteil deiner Wahl entfernen |
-| Sprengladung | Räumt alle Bauteile in einem 3×3-Feld – Ziel anklicken |
-| Neue Karten | Übrige Hand abwerfen und neu ziehen |
+| Doppelsprung | Diese Runde ein zusätzlicher Sprung in der Luft |
+| Schutzschild | Fängt einen tödlichen Treffer ab (Stacheln, Säge, Pendel, Pfeil) – gegen Abstürze hilft er nicht |
+| Turbo | Diese Runde deutlich schneller laufen |
+| Gleitschirm | Sprungtaste in der Luft halten und langsam hinabschweben |
+| Abrissbirne | Ein liegendes Bauteil deiner Wahl entfernen – Karte anklicken, dann aufs Bauteil |
+
+Doppelsprung, Schutzschild, Turbo und Gleitschirm wirken in der Partyphase direkt
+nach dem Einsetzen. In der Spielerleiste zeigt ein kleines Zeichen, wer gerade was
+hat; im Level sieht man Schildblase, Schirm und Turbo-Streifen an der Figur.
 
 ## Welten
 
@@ -248,12 +254,13 @@ herauslaufen geht nicht, nur nach unten fällt man.
 
 ## Selbsttest
 
-`tests.php` im Browser öffnen. Die Seite fährt 68 Tests: gegen die echte
+`tests.php` im Browser öffnen. Die Seite fährt 80 Tests: gegen die echte
 Spiel-Engine (Sprunghöhen, jedes Bauteil, jede Todesursache, die sichere
-Startzone), gegen die Serverregeln in PHP (Reihenfolge, Kartenziehen, Power-ups,
-Grabsteine, Lobby, Karten-Parser) – und sie vergleicht Bauregeln, Grabsteine und
-den Bauteil-Katalog von JavaScript **mit denen von PHP**, damit Server und Client
-nicht auseinanderlaufen.
+Startzone, Doppelsprung, Schild, Turbo, Gleitschirm), gegen die Serverregeln in PHP
+(Reihenfolge, Kartenziehen, Power-ups, wann Bauteile verschwinden, Matchende nach
+Runden samt Gleichstand, Grabsteine, Lobby, Karten-Parser) – und sie vergleicht
+Bauregeln, Grabsteine sowie Bauteil- und Power-up-Katalog von JavaScript **mit denen
+von PHP**, damit Server und Client nicht auseinanderlaufen.
 
 Wichtigster Teil: für **jede Welt** sucht der Test erst einen Weg über die
 erreichbaren Standflächen und lässt dann eine echte Figur diesen Weg mit der
@@ -329,4 +336,7 @@ erscheinen deshalb nur als einzelne Knoten; die PHP-Klassen, `level.js` und
 * **Figuren kollidieren nicht miteinander** – sie laufen durcheinander hindurch.
 * Online ist die Physik **clientseitig**: Wer das Spiel manipulieren will, kann das.
   Für eine Runde mit Freunden ist das kein Problem, für ein Turnier schon.
-* Die Punktetabelle ist eine eigene, vereinfachte Variante (siehe oben).
+* Die Punktetabelle ist eine eigene, vereinfachte Variante (siehe oben), und ein
+  Match geht über eine feste Rundenzahl statt bis zu einer Zielpunktzahl.
+* **Power-ups helfen dem, der sie zieht** (Doppelsprung, Schild, Turbo, Schirm) –
+  im Original gibt es so etwas nicht.

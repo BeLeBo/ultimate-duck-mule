@@ -27,13 +27,29 @@ $pre = [
     'tab' => in_array($_GET['tab'] ?? '', ['local', 'online', 'rules'], true) ? $_GET['tab'] : 'local',
     'players' => max(2, min(Game::MAX_PLAYERS, (int) ($_GET['players'] ?? 3))),
     'level' => Levels::byId($preLevel) !== null ? $preLevel : '',
-    'target' => max(3, min(30, (int) ($_GET['target'] ?? Game::DEFAULT_TARGET))),
+    'rounds' => Game::clampRounds((int) ($_GET['rounds'] ?? Game::DEFAULT_ROUNDS)),
     'names' => [],
     'chars' => [],
 ];
 for ($i = 0; $i < Game::MAX_PLAYERS; $i++) {
     $pre['names'][$i] = Game::cleanName((string) ($_GET['n' . $i] ?? ''), $i);
     $pre['chars'][$i] = Game::cleanChar((string) ($_GET['c' . $i] ?? ''), $i);
+}
+
+/** Auswahlliste fuer die Matchlaenge in Runden. */
+function roundsSelect(string $id, string $name, int $selected): void
+{
+    $choices = [3, 5, 8, 10, 12, 15, 20];
+    if (!in_array($selected, $choices, true)) {
+        $choices[] = $selected;
+        sort($choices);
+    }
+    echo '<select id="' . htmlspecialchars($id, ENT_QUOTES) . '"'
+        . ($name !== '' ? ' name="' . htmlspecialchars($name, ENT_QUOTES) . '"' : '') . '>';
+    foreach ($choices as $n) {
+        echo '<option value="' . $n . '"' . ($n === $selected ? ' selected' : '') . '>' . $n . ' Runden</option>';
+    }
+    echo '</select>';
 }
 
 /**
@@ -110,8 +126,8 @@ function levelPicker(string $inputId, string $inputName, string $selected, array
           </select>
         </div>
         <div>
-          <label for="local-target">Punkte zum Sieg</label>
-          <input type="number" name="target" id="local-target" value="<?= (int) $pre['target'] ?>" min="3" max="30">
+          <label for="local-rounds">Spiellänge</label>
+          <?php roundsSelect('local-rounds', 'rounds', $pre['rounds']); ?>
         </div>
       </div>
 
@@ -170,8 +186,8 @@ function levelPicker(string $inputId, string $inputName, string $selected, array
         <?php levelPicker('host-level', '', $pre['level'], $levels); ?>
         <div class="row" style="margin:12px 0">
           <div>
-            <label for="host-target">Punkte zum Sieg</label>
-            <input type="number" id="host-target" value="<?= (int) $pre['target'] ?>" min="3" max="30">
+            <label for="host-rounds">Spiellänge</label>
+            <?php roundsSelect('host-rounds', '', $pre['rounds']); ?>
           </div>
         </div>
         <button type="button" class="big" id="btn-create">Raum erstellen</button>
@@ -200,15 +216,15 @@ function levelPicker(string $inputId, string $inputName, string $selected, array
     <h2>Regeln</h2>
     <ol class="rules">
       <li><strong>Jedes Level ist ohne ein einziges Bauteil zu schaffen.</strong> Alles, was gebaut wird, ist ein Hindernis &ndash; es gibt keine Kletterhilfen.</li>
-      <li><strong>Bauphase:</strong> Der Reihe nach setzt jeder <strong>ein Bauteil</strong> aus seiner Hand und darf dabei <strong>ein bereits liegendes entfernen</strong> (Taste X oder Rechtsklick). Die Reihenfolge richtet sich nach dem Punktestand: <strong>wer vorne liegt, baut zuerst</strong> &ndash; wer hinten liegt, sieht alles und hat das letzte Wort. Gleichstand entscheidet das Los.</li>
-      <li><strong>Bauteile verbrauchen sich:</strong> Jedes Bauteil, das jemanden erwischt hat, verschwindet nach der Runde wieder.</li>
+      <li><strong>Bauphase:</strong> Der Reihe nach setzt jeder <strong>ein Bauteil</strong> aus seiner Hand. Die Reihenfolge richtet sich nach dem Punktestand: <strong>wer vorne liegt, baut zuerst</strong> &ndash; wer hinten liegt, sieht alles und hat das letzte Wort. Gleichstand entscheidet das Los.</li>
+      <li><strong>Bauteile bleiben liegen.</strong> Selbst l&ouml;schen kann man nichts. Ein Bauteil verschwindet nur, wenn es in einer Runde <strong>alle Spieler</strong> erwischt hat &ndash; oder wenn jemand die <strong>Abrissbirne</strong> (Power-up) darauf ansetzt.</li>
       <li><strong>Partyphase:</strong> Alle starten gleichzeitig und versuchen, die Fahne zu erreichen. Wer stirbt, schaut den Rest der Runde zu.</li>
       <li><strong>Punkte:</strong> Ziel erreicht <b>+1</b> &middot; erster im Ziel <b>+1</b> extra &middot;
         einziger im Ziel <b>+2</b> extra &middot; ein Gegner stirbt an deinem Bauteil <b>+1</b> &middot;
         du hast ihn mit &Ouml;l oder Ventilator hineingeschoben <b>+1</b> &middot;
         du stirbst an deinem eigenen Bauteil <b>-1</b>. Unter 0 geht es nicht.
         <strong>Kommt niemand ins Ziel, gibt es f&uuml;r die Runde gar keine Punkte</strong> &ndash; auch keine f&uuml;r Fallen.</li>
-      <li><strong>Sieg:</strong> Wer nach einer Runde die Zielpunktzahl erreicht hat und allein vorne liegt, gewinnt.</li>
+      <li><strong>Sieg:</strong> Ein Match dauert eine feste Zahl an Runden. Wer danach die meisten Punkte hat, gewinnt &ndash; bei Gleichstand teilen sich die F&uuml;hrenden den Sieg.</li>
       <li><strong>Bewegung:</strong> Laufen, springen, an W&auml;nden abrutschen und abspringen (Wandsprung).</li>
       <li>Kommt <strong>drei Runden lang niemand</strong> ins Ziel, ist das Level zugebaut und wird ger&auml;umt.</li>
     </ol>
@@ -227,7 +243,7 @@ function levelPicker(string $inputId, string $inputName, string $selected, array
     </ul>
 
     <h3 style="margin-top:18px">Power-ups</h3>
-    <p class="muted small">Liegen manchmal als vierte Karte auf der Hand. Anklicken setzt sie ein &ndash; am besten vor dem letzten Bauteil, denn das beendet den Zug.</p>
+    <p class="muted small">Liegen oft als vierte Karte auf der Hand und helfen dir selbst. Anklicken setzt sie ein &ndash; sie kosten keinen Zug, m&uuml;ssen aber <strong>vor</strong> dem eigenen Bauteil kommen, denn das beendet den Zug. Doppelsprung, Schutzschild, Turbo und Gleitschirm wirken in der direkt folgenden Partyphase.</p>
     <ul class="cardlist">
       <?php foreach (Cards::POWERUPS as $id => $card): ?>
         <li>
@@ -417,7 +433,7 @@ function levelPicker(string $inputId, string $inputName, string $selected, array
       name: onlineName(),
       char: currentChar('online'),
       level: document.getElementById('host-level').value,
-      target: parseInt(document.getElementById('host-target').value, 10) || 10
+      rounds: parseInt(document.getElementById('host-rounds').value, 10) || 8
     }).then(enterRoom).catch(function (err) {
       button.disabled = false;
       showError(err.message);

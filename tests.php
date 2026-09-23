@@ -23,7 +23,7 @@ $serverCheck = static function (string $name, bool $ok, string $detail = '') use
 };
 
 $makeRoom = static function (array $names): array {
-    $room = Game::newRoom('TEST', 10, 'wiese');
+    $room = Game::newRoom('TEST', 8, 'wiese');
     foreach ($names as $name) {
         Game::addPlayer($room, $name, '');
     }
@@ -82,39 +82,122 @@ $serverCheck('Jede Hand hat vier Karten, davon mindestens drei Bauteile',
     $badHands === 0 && $withPower > 100 && $withPower < 320,
     '500 Hände, Power-up in ' . round($withPower / 5) . ' %');
 
-// Power-ups.
+// Power-ups: Hilfen fuer die eigene Figur, die Abrissbirne loescht gezielt.
 $room = $makeRoom(['Anna', 'Bo']);
 Game::startMatch($room, $tokenOf($room, 'Anna'));
 $builder = Game::currentBuilder($room);
-$room['players'][$builder]['hand'] = ['stone', 'pu_extra', 'pu_remove', 'pu_bomb'];
+$room['players'][$builder]['hand'] = ['stone', 'pu_djump', 'pu_remove'];
 $room['blocks'] = [
     ['id' => 50, 'type' => 'stone', 'x' => 12, 'y' => 14, 'rot' => 0, 'ownerSlot' => 1],
     ['id' => 51, 'type' => 'beam', 'x' => 13, 'y' => 15, 'rot' => 0, 'ownerSlot' => 1],
-    ['id' => 52, 'type' => 'stone', 'x' => 30, 'y' => 10, 'rot' => 0, 'ownerSlot' => 1],
 ];
 Game::usePower($room, $builder, 1, -1, -1);
-Game::usePower($room, $builder, 1, -1, -1);
-$serverCheck('Doppelbau und Abrissbirne erhöhen das Kontingent',
-    $room['players'][$builder]['places'] === 2 && $room['players'][$builder]['removes'] === 2,
-    'Bauteile ' . $room['players'][$builder]['places'] . ', Löschungen ' . $room['players'][$builder]['removes']);
-$emptyBlast = '';
+$serverCheck('Doppelsprung wirkt auf die eigene Figur und kostet keinen Bauzug',
+    $room['players'][$builder]['buffs'] === ['pu_djump'] && $room['players'][$builder]['places'] === 1
+    && $room['players'][$builder]['hand'] === ['stone', 'pu_remove'] && Game::currentBuilder($room) === $builder,
+    'Buffs ' . json_encode($room['players'][$builder]['buffs']) . ', Hand ' . json_encode($room['players'][$builder]['hand']));
+$emptyRemove = '';
 try {
     Game::usePower($room, $builder, 1, 2, 2);
 } catch (RuntimeException $e) {
-    $emptyBlast = $e->getMessage();
+    $emptyRemove = $e->getMessage();
 }
-Game::usePower($room, $builder, 1, 12, 15);
-$serverCheck('Sprengladung räumt das 3×3-Feld und hinterlässt Grabsteine',
-    $emptyBlast !== '' && array_column($room['blocks'], 'id') === [52] && count($room['graves']) === 2,
+// Rechtes Ende des Balkens (13..15) trifft den ganzen Balken.
+Game::usePower($room, $builder, 1, 15, 15);
+$serverCheck('Abrissbirne entfernt genau das getroffene Bauteil und hinterlässt einen Grabstein',
+    $emptyRemove !== '' && array_column($room['blocks'], 'id') === [50] && count($room['graves']) === 1
+    && $room['players'][$builder]['hand'] === ['stone'],
     'übrig ' . json_encode(array_column($room['blocks'], 'id')) . ', Grabsteine ' . count($room['graves']));
 $graveError = '';
+$room['players'][$builder]['hand'] = ['beam'];
 try {
-    Game::place($room, $builder, 0, 12, 14, 0);
+    Game::place($room, $builder, 0, 13, 15, 0);
 } catch (RuntimeException $e) {
     $graveError = $e->getMessage();
 }
 $serverCheck('Auf einem frischen Grabstein darf derselbe Typ nicht wieder hin',
     strpos($graveError, 'eben erst') !== false, $graveError);
+$serverCheck('Ohne Power-up kann niemand selbst löschen',
+    !method_exists(Game::class, 'removeBlock') && !array_key_exists('removes', $room['players'][$builder]),
+    'removeBlock ' . (method_exists(Game::class, 'removeBlock') ? 'vorhanden' : 'weg'));
+Game::beginRound($room);
+$serverCheck('Power-ups gelten nur für die folgende Partyphase',
+    $room['players'][$builder]['buffs'] === [], json_encode($room['players'][$builder]['buffs']));
+
+// Bauteile verschwinden nur, wenn sie alle erwischt haben.
+$room = $makeRoom(['Anna', 'Bo', 'Cem']);
+Game::startMatch($room, $tokenOf($room, 'Anna'));
+$room['phase'] = 'party';
+$room['blocks'] = [
+    ['id' => 7, 'type' => 'spike', 'x' => 10, 'y' => 17, 'rot' => 0, 'ownerSlot' => 0],
+    ['id' => 8, 'type' => 'saw', 'x' => 20, 'y' => 12, 'rot' => 0, 'ownerSlot' => 1],
+];
+$results = [
+    'Anna' => ['killerSlot' => 0, 'killerBlock' => 7],
+    'Bo' => ['killerSlot' => 0, 'killerBlock' => 7],
+    'Cem' => ['killerSlot' => 0, 'killerBlock' => 7],
+];
+foreach ($results as $name => $result) {
+    $room['players'][$tokenOf($room, $name)]['result'] = $result + ['finished' => false, 'time' => 3.0, 'cause' => 'stachel'];
+}
+Game::finishRound($room);
+$allKilled = array_column($room['blocks'], 'id');
+$room['phase'] = 'party';
+foreach (['Anna' => 8, 'Bo' => 8, 'Cem' => null] as $name => $block) {
+    $room['players'][$tokenOf($room, $name)]['result'] = $block === null
+        ? ['finished' => true, 'time' => 9.0, 'killerSlot' => null, 'killerBlock' => null, 'cause' => 'ziel']
+        : ['finished' => false, 'time' => 3.0, 'killerSlot' => 1, 'killerBlock' => $block, 'cause' => 'saege'];
+}
+Game::finishRound($room);
+$serverCheck('Bauteile verschwinden nur, wenn sie alle Spieler erwischt haben',
+    $allKilled === [8] && array_column($room['blocks'], 'id') === [8],
+    'nach Runde 1: ' . json_encode($allKilled) . ', nach Runde 2: ' . json_encode(array_column($room['blocks'], 'id')));
+
+// Spiellaenge in Runden: Sieger erst nach der letzten Runde, Gleichstand teilt.
+$room = Game::newRoom('TEST', 3, 'wiese');
+foreach (['Anna', 'Bo', 'Cem'] as $name) {
+    Game::addPlayer($room, $name, '');
+}
+foreach ($room['players'] as &$player) {
+    $player['lastSeen'] = time();
+}
+unset($player);
+Game::startMatch($room, $tokenOf($room, 'Anna'));
+$phases = [];
+for ($r = 1; $r <= 3; $r++) {
+    $room['phase'] = 'party';
+    foreach (['Anna', 'Bo', 'Cem'] as $name) {
+        $finished = $name !== 'Cem';
+        $room['players'][$tokenOf($room, $name)]['result'] = [
+            'finished' => $finished, 'time' => $name === 'Anna' ? 5.0 : 6.0, 'killerSlot' => null,
+            'killerBlock' => null, 'cause' => $finished ? 'ziel' : 'sturz',
+        ];
+    }
+    Game::finishRound($room);
+    $phases[] = $room['phase'];
+    if ($room['phase'] === 'score') {
+        Game::beginRound($room);
+    }
+}
+$serverCheck('Match endet nach der eingestellten Rundenzahl',
+    $phases === ['score', 'score', 'over'] && $room['winner']['players'][0]['name'] === 'Anna'
+    && count($room['winner']['players']) === 1,
+    implode(' → ', $phases) . ', Sieger ' . json_encode($room['winner']));
+$room['players'][$tokenOf($room, 'Bo')]['score'] = $room['players'][$tokenOf($room, 'Anna')]['score'];
+$room['phase'] = 'party';
+$room['round'] = 2;
+Game::beginRound($room);
+$room['phase'] = 'party';
+foreach (['Anna', 'Bo', 'Cem'] as $name) {
+    $room['players'][$tokenOf($room, $name)]['result'] = [
+        'finished' => false, 'time' => 3.0, 'killerSlot' => null, 'killerBlock' => null, 'cause' => 'sturz',
+    ];
+}
+Game::finishRound($room);
+$tied = array_column($room['winner']['players'] ?? [], 'name');
+sort($tied);
+$serverCheck('Gleichstand nach der letzten Runde: beide gewinnen',
+    $room['phase'] === 'over' && $tied === ['Anna', 'Bo'], json_encode($tied));
 
 // Nach dem Match zurueck in die Lobby.
 $room = $makeRoom(['Anna', 'Bo']);
@@ -135,10 +218,11 @@ try {
 Game::backToLobby($room, $host);
 Game::updateSettings($room, $host, 'vulkan', 12);
 $scoresNow = array_sum(array_column($room['players'], 'score'));
-$serverCheck('Nochmal spielen: Lobby mit neuer Welt, Punkte und Bauteile zurückgesetzt',
+$serverCheck('Nochmal spielen: Lobby mit neuer Welt und Rundenzahl, Punkte und Bauteile zurückgesetzt',
     $notHost !== '' && $room['phase'] === 'lobby' && $room['blocks'] === [] && $scoresNow === 0
-    && $room['levelId'] === 'vulkan' && $room['targetScore'] === 12 && count($room['order']) === 2,
-    'Phase ' . $room['phase'] . ', Welt ' . $room['levelId'] . ', Ziel ' . $room['targetScore']);
+    && $room['levelId'] === 'vulkan' && $room['rounds'] === 12 && count($room['order']) === 2
+    && Game::publicState($room, $host)['rounds'] === 12,
+    'Phase ' . $room['phase'] . ', Welt ' . $room['levelId'] . ', Runden ' . $room['rounds']);
 
 // Karten-Parser lehnt kaputte Karten ab.
 $broken = 0;
@@ -739,6 +823,94 @@ window.UDM_SERVER_CHECKS = <?= json_encode($serverChecks, JSON_UNESCAPED_UNICODE
     check('Aufgeben beendet die eigene Runde ohne Schuldigen',
       !p.alive && p.cause === 'aufgabe' && p.killerSlot === null && p.isDone(),
       'cause=' + p.cause + ', killer=' + p.killerSlot);
+  }());
+
+  /* ---------------------------------------------------------- Power-ups */
+
+  function buffed(tx, ty, buffs) {
+    var p = makePlayer(tx, ty);
+    p.applyBuffs(buffs);
+    return p;
+  }
+
+  (function testDoubleJump() {
+    var jumpTwice = function (t) {
+      return keys({ jump: t < 0.9, jumpPressed: t < 1 / 60 || (t >= 0.35 && t < 0.35 + 1 / 60) });
+    };
+    var level = makeLevel(FLAT);
+    var plain = makePlayer(10, 17);
+    var normal = plain.y - simulate(plain, level, 1.6, jumpTwice).minY;
+    var p = buffed(10, 17, ['pu_djump']);
+    var high = p.y - simulate(p, makeLevel(FLAT), 1.6, jumpTwice).minY;
+    check('Doppelsprung: zweiter Sprung in der Luft trägt deutlich höher',
+      high > normal + 2 * TILE && p.airJumps === p.airJumpsMax,
+      'ohne ' + (normal / TILE).toFixed(1) + ' Kacheln, mit ' + (high / TILE).toFixed(1) + ' Kacheln');
+  }());
+
+  (function testShieldAbsorbsOneHit() {
+    var level = makeLevel(FLAT, [block('spike', 10, 17, 0, 2)]);
+    var p = buffed(10, 17, ['pu_shield']);
+    var run = simulate(p, level, 4, NONE);
+    var first = run.events[0] || {};
+    check('Schutzschild fängt einen Treffer ab, der zweite zählt',
+      first.type === 'shield' && !p.alive && p.cause === 'stachel' && p.killerSlot === 2 &&
+      run.time > UDM.PHYS.shieldGrace,
+      'Ereignisse=' + run.events.map(function (e) { return e.type; }).join(',') +
+      ', tot nach ' + run.time.toFixed(2) + ' s');
+  }());
+
+  (function testShieldNoFallProtection() {
+    var p = buffed(10, 10, ['pu_shield']);
+    simulate(p, makeLevel(VOID), 3, NONE);
+    check('Schutzschild hilft nicht gegen Abstürze',
+      !p.alive && p.cause === 'sturz' && p.shield === 1, 'cause=' + p.cause + ', Schild=' + p.shield);
+  }());
+
+  (function testGlide() {
+    var level = makeLevel(FLAT);
+    var p = buffed(10, 2, ['pu_glide']);
+    var y0 = p.y;
+    simulate(p, level, 1, keys({ jump: true }), { keepGoing: true });
+    var drop = p.y - y0;
+    var q = makePlayer(10, 2);
+    simulate(q, makeLevel(FLAT), 1, keys({ jump: true }), { keepGoing: true });
+    check('Gleitschirm: Sprungtaste halten bremst den Fall',
+      p.anim === 'glide' && p.vy <= UDM.PHYS.glideFall + 0.01 && drop < (q.y - y0) / 2,
+      'mit Schirm ' + drop.toFixed(0) + ' px, ohne ' + (q.y - y0).toFixed(0) + ' px in 1 s');
+  }());
+
+  (function testTurbo() {
+    var plain = makePlayer(3, 17);
+    var x0 = plain.x;
+    simulate(plain, makeLevel(FLAT), 0.8, keys({ right: true }), { keepGoing: true });
+    var fast = buffed(3, 17, ['pu_speed']);
+    simulate(fast, makeLevel(FLAT), 0.8, keys({ right: true }), { keepGoing: true });
+    var a = plain.x - x0;
+    var b = fast.x - x0;
+    check('Turbo: deutlich schneller unterwegs', b > a * 1.2,
+      'ohne ' + a.toFixed(0) + ' px, mit ' + b.toFixed(0) + ' px');
+  }());
+
+  (function testBuffsResetEachParty() {
+    var p = buffed(10, 17, ['pu_djump', 'pu_shield']);
+    p.reset(p.x, p.y);
+    p.applyBuffs([]);
+    check('Ohne Power-up keine Sonderfähigkeiten',
+      p.airJumpsMax === 0 && p.shield === 0 && p.speedMul === 1 && !p.canGlide,
+      'Luftsprünge=' + p.airJumpsMax + ', Schild=' + p.shield);
+  }());
+
+  (function testPowerupCatalogMatches() {
+    var server = <?= json_encode(array_map(static fn (array $c): string => $c['kind'], Cards::POWERUPS)) ?>;
+    var problems = [];
+    Object.keys(server).forEach(function (id) {
+      if (server[id] === 'buff' && !UDM.BUFF_BADGES[id]) { problems.push('kein Kurzzeichen: ' + id); }
+    });
+    Object.keys(UDM.BUFF_BADGES).forEach(function (id) {
+      if (server[id] !== 'buff') { problems.push('nur im Client: ' + id); }
+    });
+    check('Power-up-Katalog stimmt zwischen PHP und JavaScript',
+      problems.length === 0, problems.join(' | ') || Object.keys(server).join(', '));
   }());
 
   /* ---------------------------------------------------- Sichere Startzone */

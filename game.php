@@ -20,7 +20,7 @@ $config = [
     'levels' => Levels::all(),
     'endpoint' => 'api/index.php',
     'handSize' => Game::HAND_SIZE,
-    'targetScore' => Game::DEFAULT_TARGET,
+    'rounds' => Game::DEFAULT_ROUNDS,
     'levelId' => null,
     'local' => null,
     'online' => null,
@@ -55,7 +55,7 @@ if ($mode === 'online') {
 
     $levelId = (string) ($_GET['level'] ?? '');
     $config['levelId'] = Levels::byId($levelId) !== null ? $levelId : null;
-    $config['targetScore'] = max(3, min(30, (int) ($_GET['target'] ?? Game::DEFAULT_TARGET)));
+    $config['rounds'] = Game::clampRounds((int) ($_GET['rounds'] ?? Game::DEFAULT_ROUNDS));
     $config['local'] = ['players' => $players];
     $title = $count . ' Spieler – Ultimate Duck Mule';
 }
@@ -77,7 +77,7 @@ $configJson = json_encode($config, JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASH
   <header id="topbar">
     <div id="round-info">
       <span id="round-label">Runde 1</span>
-      <span id="target-label">Ziel: <?= (int) $config['targetScore'] ?> Punkte</span>
+      <span id="target-label"><?= (int) $config['rounds'] ?> Runden</span>
       <span id="level-label">&nbsp;</span>
     </div>
     <div id="players"></div>

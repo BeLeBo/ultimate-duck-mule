@@ -9,8 +9,7 @@
   var PARTY_AFTER_FIRST = 10; // Restzeit, sobald jemand im Ziel ist
   var COUNTDOWN = 2.2;
   var HAND_SIZE = 4;
-  var PLACES_PER_TURN = 1;   // Bauteile pro Zug
-  var REMOVES_PER_TURN = 1;  // Loeschungen pro Zug
+  var PLACES_PER_TURN = 1;   // Bauteile pro Zug - loeschen geht nur per Abrissbirne
 
   var Game = {
     cfg: null,
@@ -20,7 +19,7 @@
     players: [],
     phase: 'boot',
     round: 0,
-    targetScore: 10,
+    totalRounds: 8,
     time: 0,
     lastFrame: 0,
     winner: null,
@@ -31,7 +30,8 @@
     build: {
       order: [], idx: 0, card: 0, rot: 0,
       tx: -1, ty: -1, valid: false, busy: false,
-      deleting: false, canDelete: false, bombing: false
+      // Zielt gerade mit der Abrissbirne auf ein Bauteil.
+      deleting: false
     },
     party: { countdown: 0, time: 0, remaining: PARTY_LIMIT, started: false, firstFinishAt: -1, reported: false },
 
@@ -47,7 +47,7 @@
 
     init: function (cfg) {
       this.cfg = cfg;
-      this.targetScore = cfg.targetScore || 10;
+      this.totalRounds = cfg.rounds || 8;
       this.canvas = document.getElementById('game');
       this.ctx = this.canvas.getContext('2d');
       this.cacheDom();
@@ -100,8 +100,6 @@
         var index = parseInt(card.getAttribute('data-card'), 10);
         if (card.hasAttribute('data-rotate')) {
           self.rotateSelection();
-        } else if (card.hasAttribute('data-erase')) {
-          self.toggleDelete();
         } else if (card.hasAttribute('data-endturn')) {
           self.endTurn();
         } else {
@@ -133,7 +131,6 @@
         this.players.push(player);
       }
       this.dom['level-label'].textContent = def.name;
-      this.dom['target-label'].textContent = 'Ziel: ' + this.targetScore + ' Punkte';
       this.round = 0;
       this.startRound();
     },
@@ -202,7 +199,8 @@
       for (var p = 0; p < this.players.length; p++) {
         this.players[p].hand = this.dealHand();
         this.players[p].placesLeft = PLACES_PER_TURN;
-        this.players[p].removesLeft = REMOVES_PER_TURN;
+        // Power-ups gelten nur fuer die Partyphase direkt nach dem Einsetzen.
+        this.players[p].buffs = [];
       }
       this.build.deleting = false;
       // Abgelaufene Grabsteine raus, der Rest gilt fuer diese Runde.
@@ -213,7 +211,7 @@
       this.level.resetRound();
       this.parkPlayers();
 
-      this.setBanner('Runde ' + this.round + ' – Bauphase');
+      this.setBanner((this.round >= this.totalRounds ? 'Letzte Runde' : 'Runde ' + this.round) + ' – Bauphase');
       this.updateHud();
     },
 
@@ -255,7 +253,6 @@
           if (UDM.Input.wasPressed('Digit' + (k + 1))) { this.selectCard(k); }
         }
         if (UDM.Input.wasPressed('KeyR')) { this.rotateSelection(); }
-        if (UDM.Input.wasPressed('KeyX')) { this.toggleDelete(); }
 
         // Cursor per Maus oder per eigenen Tasten.
         if (mouse.inside) {
@@ -269,37 +266,27 @@
         if (this.build.tx < 0) { this.build.tx = Math.floor(this.level.cols / 2); }
         if (this.build.ty < 0) { this.build.ty = Math.floor(this.level.rows / 2); }
 
-        this.build.canDelete = this.removesLeft(builder) > 0;
-        if (this.build.deleting && !this.build.canDelete) { this.build.deleting = false; }
-        if (this.build.bombing && builder.hand[this.build.card] !== 'pu_bomb') { this.build.bombing = false; }
+        if (this.build.deleting && builder.hand.indexOf('pu_remove') < 0) { this.build.deleting = false; }
 
-        var onBlock = this.level.cell(this.build.tx, this.build.ty);
-        onBlock = !!(onBlock && onBlock.kind === 'block');
-        if (this.build.bombing) {
-          this.build.valid = this.blastTargets(this.build.tx, this.build.ty).length > 0;
-        } else if (this.build.deleting) {
-          this.build.valid = onBlock;
+        if (this.build.deleting) {
+          var onBlock = this.level.cell(this.build.tx, this.build.ty);
+          this.build.valid = !!(onBlock && onBlock.kind === 'block');
         } else {
           this.build.valid = this.level.canPlaceAt(this.build.tx, this.build.ty, this.selectedType());
         }
 
         var confirm = mouse.clicked || UDM.Input.wasPressed('Enter') || UDM.Input.wasPressed('Space');
-        // Rechtsklick loescht direkt, ohne den Modus umzuschalten.
-        if (mouse.right && this.build.canDelete && onBlock && !this.build.bombing) {
-          this.tryRemove(builder);
-        } else if (confirm) {
-          if (this.build.bombing) { this.tryBomb(builder); }
-          else if (this.build.deleting) { this.tryRemove(builder); }
+        if (confirm) {
+          if (this.build.deleting) { this.tryRemove(builder); }
           else { this.tryPlace(builder); }
         }
-        if (UDM.Input.wasPressed('Escape')) {
-          this.build.bombing = false;
+        if ((UDM.Input.wasPressed('Escape') || mouse.right) && this.build.deleting) {
           this.build.deleting = false;
+          this.setBanner('', 0);
           this.renderHand();
         }
       } else {
         this.build.valid = false;
-        this.build.canDelete = false;
       }
     },
 
@@ -313,16 +300,6 @@
       return player.placesLeft === undefined ? PLACES_PER_TURN : player.placesLeft;
     },
 
-    /** Wie viele Loeschungen hat er noch? */
-    removesLeft: function (player) {
-      if (!player) { return 0; }
-      if (this.cfg.mode === 'online') {
-        var info = this.serverPlayer(player.slot);
-        return info ? info.removes : 0;
-      }
-      return player.removesLeft === undefined ? REMOVES_PER_TURN : player.removesLeft;
-    },
-
     serverPlayer: function (slot) {
       if (!this.server) { return null; }
       for (var i = 0; i < this.server.players.length; i++) {
@@ -331,29 +308,17 @@
       return null;
     },
 
-    toggleDelete: function () {
-      var builder = this.activeBuilder();
-      if (!builder || this.removesLeft(builder) <= 0) {
-        UDM.Audio.deny();
-        return;
-      }
-      this.build.deleting = !this.build.deleting;
-      UDM.Audio.select();
-      this.renderHand();
-    },
-
     selectCard: function (index) {
       var builder = this.activeBuilder();
       if (!builder || !builder.hand || index < 0 || index >= builder.hand.length) { return; }
       if (this.cfg.mode === 'online' && builder.slot !== this.mySlot) { return; }
       var card = builder.hand[index];
       if (this.isPowerUp(card)) {
-        if (card === 'pu_bomb') {
-          this.build.card = index;
-          this.build.bombing = !this.build.bombing;
-          this.build.deleting = false;
+        if (card === 'pu_remove') {
+          // Abrissbirne: erst zielen, dann aufs Bauteil klicken.
+          this.build.deleting = !this.build.deleting;
           UDM.Audio.select();
-          this.setBanner(this.build.bombing ? 'Wähle das Feld für die Sprengladung' : '', 1.6);
+          this.setBanner(this.build.deleting ? 'Klick auf das Bauteil, das weg soll' : '', 2.2);
           this.renderHand();
         } else {
           this.usePower(builder, index, -1, -1);
@@ -363,7 +328,6 @@
       this.build.card = index;
       this.build.rot = 0;
       this.build.deleting = false;
-      this.build.bombing = false;
       UDM.Audio.select();
       this.renderHand();
     },
@@ -402,31 +366,30 @@
       return builder.hand[this.build.card] === type ? this.build.card : builder.hand.indexOf(type);
     },
 
-    /** Alle Bauteile, die eine Sprengladung um (tx, ty) erwischen wuerde. */
-    blastTargets: function (tx, ty) {
-      return this.level.blocks.filter(function (cell) {
-        return cell.tx <= tx + 1 && cell.tx + (cell.w || 1) - 1 >= tx - 1 &&
-          cell.ty <= ty + 1 && cell.ty + (cell.h || 1) - 1 >= ty - 1;
-      });
-    },
-
     /**
      * Power-up einsetzen. Lokal direkt, online ueber den Server
-     * (Game::usePower() in PHP rechnet dort dasselbe).
+     * (Game::usePower() in PHP rechnet dort dasselbe). Nur die Abrissbirne
+     * braucht ein Ziel; alle anderen wirken in der folgenden Partyphase.
      */
     usePower: function (builder, index, tx, ty) {
       var card = builder.hand[index];
       var meta = this.cardMeta(card);
+      var self = this;
 
       if (this.cfg.mode === 'online') {
-        var self = this;
         this.build.busy = true;
         this.net.call('power', { card: index, x: tx, y: ty }).then(function (data) {
           self.build.busy = false;
-          self.build.bombing = false;
+          self.build.deleting = false;
           self.build.card = 0;
-          UDM.Audio.bounce();
-          self.setBanner(meta.name + '!', 1.4);
+          if (card === 'pu_remove') {
+            self.level.burst(tx * TILE + TILE / 2, ty * TILE + TILE / 2, '#ffffff', 14);
+            UDM.Render.kick(4);
+            UDM.Audio.die();
+          } else {
+            UDM.Audio.goal();
+          }
+          self.setBanner(card === 'pu_remove' ? 'Weg damit!' : meta.name + ' für diese Runde!', 1.6);
           self.applyServerState(data.state);
         }).catch(function (err) {
           self.build.busy = false;
@@ -437,48 +400,30 @@
         return;
       }
 
-      if (card === 'pu_extra') {
-        builder.placesLeft = this.placesLeft(builder) + 1;
-      } else if (card === 'pu_remove') {
-        builder.removesLeft = this.removesLeft(builder) + 1;
-      } else if (card === 'pu_redraw') {
-        builder.hand = [card].concat(this.dealBlocks(Math.max(1, builder.hand.length - 1)));
-        index = 0;
-      } else if (card === 'pu_bomb') {
-        var targets = this.blastTargets(tx, ty);
-        if (!targets.length) {
+      if (card === 'pu_remove') {
+        var cell = this.level.cell(tx, ty);
+        if (!cell || cell.kind !== 'block') {
           UDM.Audio.deny();
-          this.setBanner('Da ist nichts zu sprengen', 1.2);
+          this.setBanner('Da liegt kein Bauteil', 1.2);
           return;
         }
-        var self2 = this;
-        targets.forEach(function (cell) {
-          self2.addGrave(cell);
-          self2.level.burst(cell.tx * TILE + TILE / 2, cell.ty * TILE + TILE / 2, '#ffb347', 16);
-          self2.level.removeBlock(cell);
-        });
-        UDM.Render.kick(8);
+        this.addGrave(cell);
+        this.level.burst((cell.tx + (cell.w || 1) / 2) * TILE, (cell.ty + (cell.h || 1) / 2) * TILE, '#ffffff', 14);
+        this.level.removeBlock(cell);
+        UDM.Render.kick(4);
         UDM.Audio.die();
+        this.setBanner('Weg damit!', 1.4);
+      } else {
+        builder.buffs = builder.buffs || [];
+        if (builder.buffs.indexOf(card) < 0) { builder.buffs.push(card); }
+        UDM.Audio.goal();
+        this.setBanner(meta.name + ' für diese Runde!', 1.6);
       }
 
       builder.hand.splice(index, 1);
       this.build.card = 0;
-      this.build.bombing = false;
-      UDM.Audio.bounce();
-      this.setBanner(meta.name + '!', 1.4);
+      this.build.deleting = false;
       this.updateHud();
-    },
-
-    tryBomb: function (builder) {
-      if (this.build.busy) { return; }
-      var index = builder.hand.indexOf('pu_bomb');
-      if (index < 0) { this.build.bombing = false; return; }
-      if (!this.blastTargets(this.build.tx, this.build.ty).length) {
-        UDM.Audio.deny();
-        this.setBanner('Da ist nichts zu sprengen', 1.2);
-        return;
-      }
-      this.usePower(builder, index, this.build.tx, this.build.ty);
     },
 
     /** Zug vorzeitig beenden - lokal wie online. */
@@ -553,12 +498,12 @@
       this.level.graves = this.graves;
     },
 
-    /** Entfernt ein liegendes Bauteil - kostet die Loeschung dieses Zugs. */
+    /** Abrissbirne auf das Bauteil unter dem Cursor. */
     tryRemove: function (builder) {
       if (this.build.busy) { return; }
-      if (this.removesLeft(builder) <= 0) {
-        UDM.Audio.deny();
-        this.setBanner('Keine Löschung mehr übrig', 1.4);
+      var index = builder.hand.indexOf('pu_remove');
+      if (index < 0) {
+        this.build.deleting = false;
         return;
       }
       var cell = this.level.cell(this.build.tx, this.build.ty);
@@ -567,20 +512,7 @@
         this.setBanner('Da liegt kein Bauteil', 1.2);
         return;
       }
-
-      if (this.cfg.mode === 'online') {
-        this.removeOnline();
-        return;
-      }
-
-      this.addGrave(cell);
-      this.level.removeBlockAt(this.build.tx, this.build.ty);
-      builder.removesLeft = this.removesLeft(builder) - 1;
-      this.build.deleting = false;
-      this.level.burst(this.build.tx * TILE + TILE / 2, this.build.ty * TILE + TILE / 2, '#ffffff', 12);
-      UDM.Audio.place();
-      UDM.Render.kick(2);
-      this.updateHud();
+      this.usePower(builder, index, this.build.tx, this.build.ty);
     },
 
     advanceBuild: function () {
@@ -613,6 +545,8 @@
         var p = this.players[i];
         var spawn = this.level.spawnPoint(i);
         p.reset(spawn.x, spawn.y);
+        // Power-ups aus der Bauphase wirken genau in dieser Partyphase.
+        p.applyBuffs(p.buffs || []);
       }
       this.setBanner('');
       this.updateHud();
@@ -654,7 +588,7 @@
         p.update(dt, input, this.level);
         var event = p.checkFate(this.level);
         if (event) {
-          UDM.Render.kick(event.type === 'death' ? 7 : 4);
+          UDM.Render.kick(event.type === 'death' ? 7 : event.type === 'shield' ? 3 : 4);
           if (event.type === 'finish' && this.party.firstFinishAt < 0) {
             this.party.firstFinishAt = this.party.time;
             this.party.remaining = Math.min(this.party.remaining, PARTY_AFTER_FIRST);
@@ -768,12 +702,9 @@
     finishRoundLocal: function () {
       this.lastRound = this.scoreRound(this.players);
 
-      // Jedes Bauteil, das getötet hat, ist damit verbraucht.
-      var spent = [];
-      this.players.forEach(function (p) {
-        if (p.killerBlock) { spent.push(p.killerBlock); }
-        if (p.assistBlock) { spent.push(p.assistBlock); }
-      });
+      // Ein Bauteil verschwindet nur, wenn es alle erwischt hat -
+      // wie Game::spentBlocks() in PHP.
+      var spent = this.spentBlocks(this.players);
       var self = this;
       this.level.blocks.forEach(function (cell) {
         if (spent.indexOf(cell.id) >= 0) { self.addGrave(cell); }
@@ -794,14 +725,15 @@
         }
       }
 
-      var leader = this.players.slice().sort(function (a, b) { return b.score - a.score; });
-      var champion = null;
-      if (leader[0].score >= this.targetScore && (leader.length < 2 || leader[0].score > leader[1].score)) {
-        champion = leader[0];
-      }
-
-      if (champion) {
-        this.winner = { slot: champion.slot, name: champion.name, char: champion.char, score: champion.score };
+      // Nach der letzten Runde gewinnt, wer vorne liegt - Gleichstand teilt.
+      if (this.round >= this.totalRounds) {
+        var best = Math.max.apply(null, this.players.map(function (p) { return p.score; }));
+        this.winner = {
+          score: best,
+          players: this.players.filter(function (p) { return p.score === best; }).map(function (p) {
+            return { slot: p.slot, name: p.name, char: p.char };
+          })
+        };
         this.phase = 'over';
         UDM.Audio.win();
         this.showWinner();
@@ -810,6 +742,20 @@
         this.showScore();
       }
       this.updateHud();
+    },
+
+    /**
+     * Kennungen der Bauteile, die in dieser Runde jeden erwischt haben.
+     * Alle anderen bleiben liegen.
+     */
+    spentBlocks: function (players) {
+      var kills = {};
+      players.forEach(function (p) {
+        if (p.killerBlock) { kills[p.killerBlock] = (kills[p.killerBlock] || 0) + 1; }
+      });
+      return Object.keys(kills).filter(function (id) {
+        return players.length > 0 && kills[id] >= players.length;
+      }).map(function (id) { return parseInt(id, 10); });
     },
 
     /* ------------------------------------------------------------- Online */
@@ -848,7 +794,8 @@
           vx: Math.round(me.vx),
           vy: Math.round(me.vy),
           face: me.face,
-          anim: me.anim
+          anim: me.anim,
+          shield: me.shield > 0
         };
       }
 
@@ -859,7 +806,6 @@
           card: this.selectedIndex(),
           rot: this.build.rot,
           deleting: this.build.deleting,
-          bombing: this.build.bombing,
           tx: this.build.tx,
           ty: this.build.ty
         };
@@ -879,7 +825,7 @@
       this.server = state;
       this.mySlot = state.youSlot !== null ? state.youSlot : 0;
       this.round = state.round;
-      this.targetScore = state.targetScore;
+      this.totalRounds = state.rounds || this.totalRounds;
 
       this.syncLevel(state);
       this.syncPlayers(state);
@@ -898,8 +844,10 @@
           this.parkPlayers();
           this.hideOverlay();
         }
+        // Nur beim Wechsel des Bauenden - sonst ueberschreibt jeder Abgleich
+        // Hinweise wie "Klick auf das Bauteil, das weg soll".
         var builder = this.activeBuilder();
-        if (builder) {
+        if (builder && (phaseChanged || previous.turnSlot !== state.turnSlot)) {
           this.setBanner(builder.slot === this.mySlot ? 'Du baust!' : (builder.name + ' baut …'));
         }
       } else if (state.phase === 'score') {
@@ -958,6 +906,7 @@
         player.score = info.score;
         player.connected = info.connected;
         player.placedThisRound = info.placed;
+        player.buffs = info.buffs || [];
         player.remote = info.slot !== this.mySlot;
         if (info.you || (info.hand && info.hand.length)) { player.hand = info.hand || []; }
         if (player.remote && state.phase === 'party' && info.pos) {
@@ -982,23 +931,6 @@
         self.build.busy = false;
         self.build.card = 0;
         self.build.rot = 0;
-        UDM.Audio.place();
-        UDM.Render.kick(2);
-        self.applyServerState(data.state);
-      }).catch(function (err) {
-        self.build.busy = false;
-        UDM.Audio.deny();
-        self.setBanner(err.message || 'Das hat nicht geklappt.', 1.8);
-        if (err.state) { self.applyServerState(err.state); }
-      });
-    },
-
-    removeOnline: function () {
-      var self = this;
-      this.build.busy = true;
-      this.net.call('remove', { x: this.build.tx, y: this.build.ty }).then(function (data) {
-        self.build.busy = false;
-        self.build.deleting = false;
         UDM.Audio.place();
         UDM.Render.kick(2);
         self.applyServerState(data.state);
@@ -1081,9 +1013,11 @@
     },
 
     updateHud: function () {
-      this.dom['round-label'].textContent = this.round > 0 ? 'Runde ' + this.round : 'Lobby';
+      this.dom['round-label'].textContent = this.round > 0
+        ? 'Runde ' + Math.min(this.round, this.totalRounds) + ' / ' + this.totalRounds
+        : 'Lobby';
       if (this.cfg.mode !== 'online') {
-        this.dom['target-label'].textContent = 'Ziel: ' + this.targetScore + ' Punkte';
+        this.dom['target-label'].textContent = this.round >= this.totalRounds ? 'Letzte Runde!' : '';
       }
       this.renderPlayers();
       this.renderHand();
@@ -1120,10 +1054,20 @@
           '<span class="pdot"></span>' +
           '<span class="pname">' + UDM.escapeHtml(p.name) + '</span>' +
           '<span class="pscore">' + p.score + '</span>' +
-          '<span class="pstatus">' + status + '</span>' +
+          '<span class="pstatus">' + status + this.buffBadges(p) + '</span>' +
           '</div>';
       }
       this.dom.players.innerHTML = html;
+    },
+
+    /** Kleine Marken fuer die Power-ups, die diese Runde wirken. */
+    buffBadges: function (player) {
+      if (this.phase !== 'build' && this.phase !== 'party') { return ''; }
+      var self = this;
+      return (player.buffs || []).map(function (id) {
+        return ' <span class="pbuff" title="' + UDM.escapeHtml(self.cardMeta(id).name) + '">' +
+          (UDM.BUFF_BADGES[id] || '★') + '</span>';
+      }).join('');
     },
 
     /** Bau-Reihenfolge dieser Runde als Liste von Spielerplaetzen. */
@@ -1149,14 +1093,13 @@
           card: this.selectedIndex(),
           rot: this.build.rot,
           deleting: this.build.deleting,
-          bombing: this.build.bombing,
           tx: this.build.tx,
           ty: this.build.ty
         };
       }
       var remote = this.server && this.server.buildView;
       if (remote && remote.slot === builder.slot) { return remote; }
-      return { card: -1, rot: 0, deleting: false, bombing: false, tx: -1, ty: -1 };
+      return { card: -1, rot: 0, deleting: false, tx: -1, ty: -1 };
     },
 
     renderHand: function () {
@@ -1170,9 +1113,8 @@
       }
 
       var places = this.placesLeft(builder);
-      var removes = this.removesLeft(builder);
-      var quota = '<span class="quota"><b>' + places + '</b> Bauteil' + (places === 1 ? '' : 'e') +
-        ' · <b>' + removes + '</b> Löschung' + (removes === 1 ? '' : 'en') + ' übrig</span>';
+      var quota = '<span class="quota"><b>' + places + '</b> Bauteil' + (places === 1 ? '' : 'e') + ' übrig' +
+        ((builder.buffs || []).length ? ' · ' + this.buffBadges(builder) : '') + '</span>';
       var name = '<strong style="color:' + builder.color + '">' + UDM.escapeHtml(builder.name) + '</strong>';
       this.dom['turn-info'].innerHTML = (mine ? name + ' ist am Zug' : name + ' baut gerade …') + '<br>' + quota;
 
@@ -1189,7 +1131,7 @@
         var id = hand[i];
         var meta = this.cardMeta(id);
         var power = this.isPowerUp(id);
-        var selected = !view.deleting && (power ? (id === 'pu_bomb' && view.bombing) : (i === view.card && !view.bombing));
+        var selected = power ? (id === 'pu_remove' && view.deleting) : (i === view.card && !view.deleting);
         html += '<' + tag + ' class="card' + (power ? ' power' : '') + (selected ? ' selected' : '') +
           (mine ? '' : ' spectate') + '"' + (mine ? ' data-card="' + i + '"' : '') +
           ' title="' + UDM.escapeHtml(meta.desc) + '">' +
@@ -1210,19 +1152,12 @@
           ((view.rot || 0) * 90 - 90) + 'deg)">➤</span>' +
           '<span class="cname">' + (rotatable ? dirLabel : 'Drehen') + '</span></button>';
 
-        html += '<button class="card erase' + (view.deleting ? ' selected' : '') +
-          (removes > 0 ? '' : ' disabled') + '" data-card="-2" data-erase="1"' +
-          ' title="Ein liegendes Bauteil entfernen (Taste X oder Rechtsklick)">' +
-          '<span class="ckey">X</span><span class="rot-icon">✖</span>' +
-          '<span class="cname">Löschen</span></button>';
-
         html += '<button class="card endturn" data-card="-3" data-endturn="1"' +
           ' title="Zug beenden, ohne weitere Bauteile zu setzen">' +
           '<span class="rot-icon">⏭</span><span class="cname">Zug beenden</span></button>';
       } else {
         // Zuschauer sehen, was der Bauende gerade vorhat.
-        var doing = view.bombing ? 'zielt mit der Sprengladung'
-          : view.deleting ? 'sucht etwas zum Löschen'
+        var doing = view.deleting ? 'zielt mit der Abrissbirne'
           : type ? 'hält ' + UDM.escapeHtml(this.cardMeta(type).name) + (rotatable ? ', ' + dirLabel : '')
           : 'überlegt …';
         html += '<div class="spectate-note">' + doing + '</div>';
@@ -1267,8 +1202,8 @@
           : '<span>Du baust als <b>' + pos + '.</b> – bis dahin zuschauen.</span>';
       } else if (this.phase === 'build') {
         html = '<span><b>Maus</b> platzieren</span><span><b>1-4</b> Karte</span>' +
-          '<span><b>R</b> drehen</span><span><b>X</b> / Rechtsklick löschen</span>' +
-          '<span>★ Power-ups vor dem letzten Bauteil</span>';
+          '<span><b>R</b> drehen</span>' +
+          '<span>★ Power-ups vor dem eigenen Bauteil einsetzen</span>';
       } else if (this.cfg.mode === 'online') {
         html = '<span><b>' + UDM.SOLO_LAYOUT.label + '</b></span><span>Wandsprung: an der Wand springen</span>';
       } else {
@@ -1283,46 +1218,65 @@
     /* ------------------------------------------------------------ Overlays */
 
     showOverlay: function (html, extraClass) {
+      this.overlayKind = extraClass || '';
       this.dom.overlay.className = 'overlay' + (extraClass ? ' ' + extraClass : '');
       this.dom.overlay.innerHTML = '<div class="panel">' + html + '</div>';
+      this.dom.overlay.scrollTop = 0;
     },
 
     hideOverlay: function () {
+      this.overlayKind = '';
       this.dom.overlay.className = 'overlay hidden';
       this.dom.overlay.innerHTML = '';
     },
 
     /**
-     * Lobby: Mitspieler, Welt und Zielpunkte. Der Gastgeber waehlt die Welt
-     * per Vorschaubild, alle anderen sehen live, was gewaehlt ist.
+     * Lobby: Mitspieler, Welt und Rundenzahl - kompakt in zwei Spalten,
+     * damit auch auf kleinen Bildschirmen alles ohne Scrollen passt. Der
+     * Gastgeber waehlt, alle anderen sehen live, was gewaehlt ist.
      */
     showLobby: function () {
       var state = this.server;
       if (!state) { return; }
+      // Regeln nicht wegziehen, waehrend jemand sie liest - beim Schliessen
+      // kommt die Lobby von selbst zurueck.
+      if (this.overlayKind === 'rules') { return; }
 
       // Nur neu aufbauen, wenn sich etwas geaendert hat - sonst flackern
       // die Vorschaubilder bei jedem Abgleich.
       var signature = JSON.stringify([
         state.players.map(function (p) { return [p.slot, p.name, p.char, p.host, p.connected]; }),
-        state.levelId, state.randomLevel, state.targetScore, state.isHost
+        state.levelId, state.randomLevel, state.rounds, state.isHost
       ]);
       if (signature === this.lobbySignature && this.dom.overlay.querySelector('.lobby')) { return; }
       this.lobbySignature = signature;
 
       var rows = state.players.map(function (p) {
-        return '<li style="--c:' + UDM.slotColor(p.slot) + '">' +
-          '<span class="pdot"></span>' + UDM.escapeHtml(p.name) +
-          (p.host ? ' <em>(Gastgeber)</em>' : '') +
-          (p.you ? ' <em>(du)</em>' : '') +
-          ' <small>' + (UDM.CHARACTERS[p.char] ? UDM.CHARACTERS[p.char].label : p.char) + '</small></li>';
+        return '<li style="--c:' + UDM.slotColor(p.slot) + '"' + (p.connected ? '' : ' class="offline"') + '>' +
+          '<span class="pdot"></span><span class="lname">' + UDM.escapeHtml(p.name) + '</span>' +
+          (p.host ? ' <em>Gastgeber</em>' : '') +
+          (p.you ? ' <em>du</em>' : '') +
+          '<small>' + (UDM.CHARACTERS[p.char] ? UDM.CHARACTERS[p.char].label : p.char) + '</small></li>';
       }).join('');
 
       var levelName = state.randomLevel ? 'Zufall' : this.levelName(state.levelId);
       var canStart = state.isHost && state.players.length >= 2;
-      var settings;
+      var rounds = state.rounds || 8;
+      var side = '<div class="lobby-label">Spieler (' + state.players.length + '/4)</div>' +
+        '<ul class="lobby-list">' + rows + '</ul>';
+      var main;
 
       if (state.isHost) {
-        settings = '<label class="lobby-label">Welt</label>' +
+        side += '<div class="lobby-label">Spiellänge</div><div class="chips">' +
+          [3, 5, 8, 10, 12, 15, 20].map(function (n) {
+            return '<button type="button" class="chip' + (n === rounds ? ' on' : '') +
+              '" data-action="rounds" data-rounds="' + n + '">' + n + '</button>';
+          }).join('') + '</div>' +
+          '<p class="muted small lobby-note">' + rounds + ' Runden, dann gewinnt, wer vorne liegt.</p>' +
+          '<button class="big" data-action="start"' + (canStart ? '' : ' disabled') + '>Spiel starten</button>' +
+          (canStart ? '' : '<p class="muted small lobby-note">Mindestens 2 Spieler nötig.</p>');
+
+        main = '<div class="lobby-label">Welt: <b>' + UDM.escapeHtml(levelName) + '</b></div>' +
           '<div class="level-picker lobby-picker">' +
           '<button type="button" class="lvl' + (state.randomLevel ? ' on' : '') + '" data-action="level" data-level="">' +
           '<span class="lvl-thumb lvl-random">?</span><span class="lvl-name">Zufall</span></button>' +
@@ -1333,24 +1287,22 @@
               '<canvas class="lvl-thumb" width="160" height="92" data-preview="' + def.id + '"></canvas>' +
               '<span class="lvl-name">' + UDM.escapeHtml(def.name) + '</span></button>';
           }).join('') +
-          '</div>' +
-          '<label class="lobby-label" for="lobby-target">Punkte zum Sieg</label>' +
-          '<input type="number" id="lobby-target" min="3" max="30" value="' + state.targetScore + '">';
+          '</div>';
       } else {
-        settings = '<p class="lobby-settings">Welt: <b>' + UDM.escapeHtml(levelName) + '</b>' +
-          ' · Ziel: <b>' + state.targetScore + ' Punkte</b></p>';
+        side += '<div class="lobby-label">Spiellänge</div><p class="lobby-value"><b>' + rounds + ' Runden</b></p>' +
+          '<p class="muted small lobby-note">Warten, bis der Gastgeber startet …</p>';
+        main = '<div class="lobby-label">Welt: <b>' + UDM.escapeHtml(levelName) + '</b></div>' +
+          (state.randomLevel
+            ? '<span class="lvl-thumb lvl-random lobby-preview">?</span>'
+            : '<canvas class="lvl-thumb lobby-preview" width="400" height="230" data-preview="' + state.levelId + '"></canvas>');
       }
 
       this.showOverlay(
         '<div class="lobby">' +
-        '<h2>Raum ' + UDM.escapeHtml(state.code) + '</h2>' +
-        '<p class="muted">Code weitergeben – bis zu 4 Spieler.</p>' +
-        '<ul class="lobby-list">' + rows + '</ul>' +
-        settings +
-        (state.isHost
-          ? '<button class="big" data-action="start"' + (canStart ? '' : ' disabled') + '>Spiel starten</button>' +
-            (canStart ? '' : '<p class="muted small">Mindestens 2 Spieler nötig.</p>')
-          : '<p class="muted">Warten, bis der Gastgeber startet …</p>') +
+        '<div class="lobby-head"><h2>Raum <span class="room-code">' + UDM.escapeHtml(state.code) + '</span></h2>' +
+        '<span class="muted small">Code weitergeben – bis zu 4 Spieler.</span></div>' +
+        '<div class="lobby-grid"><div class="lobby-side">' + side + '</div>' +
+        '<div class="lobby-main">' + main + '</div></div>' +
         '</div>',
         'lobby-overlay'
       );
@@ -1360,10 +1312,6 @@
         var def = self.levelDef(canvas.getAttribute('data-preview'));
         if (def) { UDM.Render.drawPreview(canvas, def); }
       });
-      var target = document.getElementById('lobby-target');
-      if (target) {
-        target.addEventListener('change', function () { self.sendSettings(null, parseInt(target.value, 10)); });
-      }
     },
 
     levelDef: function (id) {
@@ -1378,22 +1326,20 @@
       return def ? def.name : id;
     },
 
-    /** Gastgeber aendert Welt oder Zielpunkte (null = unveraendert). */
-    sendSettings: function (levelId, target) {
+    /** Gastgeber aendert Welt oder Rundenzahl (null = unveraendert). */
+    sendSettings: function (levelId, rounds) {
       if (!this.server || !this.server.isHost) { return; }
       var self = this;
       var level = levelId !== null ? levelId : (this.server.randomLevel ? '' : this.server.levelId);
-      var points = isNaN(target) || target === null ? this.server.targetScore : target;
-      this.net.call('settings', { level: level, target: points }).then(function (data) {
+      var count = rounds === null || isNaN(rounds) ? this.server.rounds : rounds;
+      this.net.call('settings', { level: level, rounds: count }).then(function (data) {
         self.applyServerState(data.state);
       }).catch(function (err) { self.setBanner(err.message, 2); });
     },
 
-    showScore: function () {
-      var data = this.lastRound;
-      if (!data) { return; }
-      var self = this;
-      var rows = data.entries.slice().sort(function (a, b) { return b.total - a.total; }).map(function (e) {
+    /** Tabellenzeilen einer Rundenauswertung: Gruende, Punkte, Stand. */
+    scoreRows: function (entries) {
+      return entries.slice().sort(function (a, b) { return b.total - a.total; }).map(function (e) {
         var reasons = e.reasons.length
           ? e.reasons.map(function (r) {
               return '<span class="reason">' + UDM.escapeHtml(r.text) +
@@ -1408,6 +1354,21 @@
           '<td class="total">' + e.total + '</td>' +
           '</tr>';
       }).join('');
+    },
+
+    /** Hinweise unter der Rundentabelle: nichts geholt, verschwunden, geraeumt. */
+    roundNotes: function (data, final) {
+      return (data.anyFinisher ? ''
+          : '<p class="muted">Niemand hat das Ziel erreicht – diese Runde gibt es gar keine Punkte, auch keine für Fallen.</p>') +
+        (data.spent ? '<p class="cleared">' + (data.spent === 1
+          ? 'Ein Bauteil hat alle erwischt und verschwindet.'
+          : data.spent + ' Bauteile haben alle erwischt und verschwinden.') + '</p>' : '') +
+        (data.cleared && !final ? '<p class="cleared">Drei Runden ohne Zieleinlauf – das Level wird komplett geräumt.</p>' : '');
+    },
+
+    showScore: function () {
+      var data = this.lastRound;
+      if (!data) { return; }
 
       var waiting = '';
       if (this.cfg.mode === 'online' && this.server) {
@@ -1417,40 +1378,40 @@
           : 'Alle bereit …') + '</p>';
       }
 
+      var left = this.totalRounds - data.round;
       this.showOverlay(
-        '<h2>Runde ' + data.round + '</h2>' +
-        (data.anyFinisher ? ''
-          : '<p class="muted">Niemand hat das Ziel erreicht – diese Runde gibt es gar keine Punkte, auch keine für Fallen.</p>') +
-        (data.spent ? '<p class="cleared">' + data.spent +
-          (data.spent === 1 ? ' Bauteil hat' : ' Bauteile haben') +
-          ' zugeschlagen und verschwindet wieder.</p>' : '') +
-        (data.cleared ? '<p class="cleared">Drei Runden ohne Zieleinlauf – das Level wird komplett geräumt.</p>' : '') +
-        '<table class="scoretable"><tbody>' + rows + '</tbody></table>' +
-        '<button class="big" data-action="next">Weiter</button>' + waiting,
+        '<h2>Runde ' + data.round + ' von ' + this.totalRounds + '</h2>' +
+        this.roundNotes(data) +
+        '<table class="scoretable"><tbody>' + this.scoreRows(data.entries) + '</tbody></table>' +
+        '<button class="big" data-action="next">' + (left === 1 ? 'Letzte Runde' : 'Weiter') + '</button>' + waiting,
         'score'
       );
     },
 
     showWinner: function () {
       var w = this.winner || {};
-      var color = UDM.slotColor(w.slot || 0);
-      var rows = (this.lastRound ? this.lastRound.entries : []).slice()
-        .sort(function (a, b) { return b.total - a.total; })
-        .map(function (e) {
-          return '<tr style="--c:' + UDM.slotColor(e.slot) + '"><td><span class="pdot"></span>' +
-            UDM.escapeHtml(e.name) + '</td><td class="total">' + e.total + '</td></tr>';
-        }).join('');
+      var winners = w.players || [];
+      var tie = winners.length > 1;
+      var names = winners.map(function (p) { return UDM.escapeHtml(p.name); });
+      var title = tie
+        ? '<h2>🤝 Unentschieden!</h2><p class="muted">' + names.slice(0, -1).join(', ') + ' und ' +
+          names[names.length - 1] + ' teilen sich den Sieg mit je ' + w.score + ' Punkten.</p>'
+        : '<h2 style="color:' + UDM.slotColor(winners.length ? winners[0].slot : 0) + '">🏆 ' +
+          (names[0] || '?') + ' gewinnt!</h2><p class="muted">Nach ' + this.totalRounds +
+          ' Runden mit ' + w.score + ' Punkt' + (w.score === 1 ? '' : 'en') + '.</p>';
+      var data = this.lastRound;
 
       var again = (this.cfg.mode !== 'online' || (this.server && this.server.isHost))
         ? '<button class="big" data-action="restart">Nochmal spielen</button>' +
           '<p class="muted small">' + (this.cfg.mode === 'online'
-            ? 'Zurück in die Lobby: Welt und Punkte neu wählen, weitere Mitspieler können beitreten.'
-            : 'Zurück zu den Einstellungen – Welt, Spieler und Punkte lassen sich dort ändern.') + '</p>'
+            ? 'Zurück in die Lobby: Welt und Runden neu wählen, weitere Mitspieler können beitreten.'
+            : 'Zurück zu den Einstellungen – Welt, Spieler und Runden lassen sich dort ändern.') + '</p>'
         : '<p class="muted">Der Gastgeber wählt gleich die nächste Welt.</p>';
 
       this.showOverlay(
-        '<h2 style="color:' + color + '">🏆 ' + UDM.escapeHtml(w.name || '?') + ' gewinnt!</h2>' +
-        '<table class="scoretable"><tbody>' + rows + '</tbody></table>' +
+        title +
+        (data ? '<h3>Letzte Runde</h3>' + this.roundNotes(data, true) +
+          '<table class="scoretable"><tbody>' + this.scoreRows(data.entries) + '</tbody></table>' : '') +
         again + '<a class="link" href="index.php">Zurück zum Menü</a>',
         'winner'
       );
@@ -1472,8 +1433,7 @@
         '<ol class="rules">' +
         '<li><b>Jedes Level ist ohne ein einziges Bauteil zu schaffen.</b> ' +
         'Alles, was gebaut wird, ist ein Hindernis \u2013 keine Hilfe.</li>' +
-        '<li><b>Bauphase:</b> Der Reihe nach setzt jeder <b>ein Bauteil</b> ' +
-        'und darf dabei <b>ein liegendes entfernen</b> (Taste X oder Rechtsklick). ' +
+        '<li><b>Bauphase:</b> Der Reihe nach setzt jeder <b>ein Bauteil</b>. ' +
         'Wer vorne liegt, baut zuerst – wer hinten liegt, hat das letzte Wort.</li>' +
         '<li><b>Partyphase:</b> Alle rennen gleichzeitig los und versuchen, die Fahne zu erreichen.</li>' +
         '<li><b>Punkte:</b> Ziel erreicht <b>+1</b>, erster im Ziel <b>+1</b> extra, ' +
@@ -1481,14 +1441,17 @@
         'du hast ihn mit Öl oder Ventilator hineingeschoben <b>+1</b>, ' +
         'du stirbst an deinem eigenen <b>-1</b>. ' +
         '<b>Kommt niemand ins Ziel, gibt es gar nichts</b> – auch keine Fallenpunkte.</li>' +
-        '<li><b>Bauteile verbrauchen sich:</b> Was jemanden erwischt hat, ' +
-        'verschwindet nach der Runde wieder.</li>' +
-        '<li>Wer zuerst <b>' + this.targetScore + ' Punkte</b> hat und allein vorn liegt, gewinnt.</li>' +
+        '<li><b>Bauteile bleiben liegen.</b> Selbst löschen geht nicht. Ein Bauteil verschwindet nur, ' +
+        'wenn es in einer Runde <b>alle</b> erwischt hat – oder durch die <b>Abrissbirne</b>.</li>' +
+        '<li>Das Match dauert <b>' + this.totalRounds + ' Runden</b>. Danach gewinnt, wer die meisten ' +
+        'Punkte hat – bei Gleichstand teilen sich die Führenden den Sieg.</li>' +
         '<li>Kommt <b>drei Runden lang niemand</b> ins Ziel, wird das Level komplett ger\u00e4umt.</li>' +
         '</ol>' +
         '<h3>Bauteile</h3><ul class="cardlist">' + list + '</ul>' +
-        '<h3>Power-ups</h3><p class="muted small">Liegen manchmal als vierte Karte auf der Hand. ' +
-        'Anklicken setzt sie ein – am besten vor dem letzten Bauteil, denn das beendet den Zug.</p>' +
+        '<h3>Power-ups</h3><p class="muted small">Liegen oft als vierte Karte auf der Hand und helfen dir selbst. ' +
+        'Anklicken setzt sie ein – sie kosten keinen Zug, müssen aber <b>vor</b> dem eigenen Bauteil kommen, ' +
+        'denn das beendet den Zug. Doppelsprung, Schutzschild, Turbo und Gleitschirm wirken in der ' +
+        'direkt folgenden Partyphase.</p>' +
         '<ul class="cardlist">' + powers + '</ul>' +
         '<button class="big" data-action="close">Alles klar</button>',
         'rules'
@@ -1517,7 +1480,7 @@
         'tab=local',
         'players=' + this.players.length,
         'level=' + encodeURIComponent(this.cfg.levelId || ''),
-        'target=' + this.targetScore
+        'rounds=' + this.totalRounds
       ];
       this.players.forEach(function (p, i) {
         params.push('n' + i + '=' + encodeURIComponent(p.name));
@@ -1529,6 +1492,7 @@
     onOverlayAction: function (action, target) {
       var self = this;
       if (action === 'close') {
+        this.overlayKind = '';
         if (this.phase === 'score') { this.showScore(); }
         else if (this.phase === 'over') { this.showWinner(); }
         else if (this.phase === 'lobby') { this.showLobby(); }
@@ -1560,6 +1524,9 @@
       }
       if (action === 'level') {
         this.sendSettings(target.getAttribute('data-level'), null);
+      }
+      if (action === 'rounds') {
+        this.sendSettings(null, parseInt(target.getAttribute('data-rounds'), 10));
       }
     },
 
@@ -1621,7 +1588,6 @@
           type: this.selectedType(),
           valid: this.build.valid,
           deleting: this.build.deleting,
-          bombing: this.build.bombing,
           color: builder.color
         };
       }
@@ -1630,8 +1596,7 @@
       if (view.tx < 0 || view.ty < 0) { return null; }
       var type = this.typeAt(builder.hand || [], view.card);
       var cell = this.level.cell(view.tx, view.ty);
-      var valid = view.bombing ? this.blastTargets(view.tx, view.ty).length > 0
-        : view.deleting ? !!(cell && cell.kind === 'block')
+      var valid = view.deleting ? !!(cell && cell.kind === 'block')
         : !!type && this.level.canPlaceAt(view.tx, view.ty, type);
       return {
         tx: view.tx,
@@ -1640,7 +1605,6 @@
         type: type,
         valid: valid,
         deleting: view.deleting,
-        bombing: view.bombing,
         color: builder.color,
         label: builder.name
       };
