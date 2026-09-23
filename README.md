@@ -128,7 +128,9 @@ Erweiterung aus.
 
 ## Online spielen
 
-Jeder spielt an seinem eigenen Rechner. Name und Figur trägt man im Menü ein, dann
+Jeder spielt an seinem eigenen Rechner. Name und Figur trägt man im Menü ein – wer
+das Namensfeld leer lässt, heißt einfach wie sein Tier („Ente“, bei zwei Enten
+„Ente 2“) und wechselt den Namen mit, wenn er in der Lobby das Tier tauscht. Dann
 erstellt einer einen Raum und gibt den vierstelligen Code weiter; bis zu vier
 Spieler können beitreten. In der **Lobby** wählt jeder sein **Tier** (Ente,
 Maultier, Waschbär, Frosch) und seine **Farbe** (jede gibt es nur einmal pro Raum),
@@ -147,7 +149,10 @@ Zu Beginn des eigenen Bauzugs erscheint in der Bildschirmmitte ein
 Las Vegas zeigt alles darauf: ein blinkendes PULL-Schild, ein Fächer aus flackernden
 Neonpfeilen, Lauflicht-Bögen und funkelnde Sterne. Nach 15 Sekunden hilft der
 Automat selbst nach. Dann laufen die Walzen an, bremsen ab und rasten
-nacheinander auf den gezogenen Karten ein – danach geht es los. Wer aufgibt,
+nacheinander auf den gezogenen Karten ein – danach geht es los: **15 Sekunden**
+Bauzeit pro Spieler. Alle sehen den Zeitbalken und die Sekunden neben dem Namen,
+der Bauende hört die letzten drei Sekunden ticken und sieht sie groß und rot. Wer
+nicht rechtzeitig setzt, geht leer aus – dann ist der Nächste dran. Wer aufgibt,
 hört die traurige Posaune.
 **Die anderen sehen nur, wo gebaut wird** – die Vorschau am Mauszeiger des
 Bauenden, aber nicht seine Handkarten. Pfeilfallen und Bruchblöcke sind nur
@@ -265,12 +270,13 @@ herauslaufen geht nicht, nur nach unten fällt man.
 
 ## Selbsttest
 
-`tests.php` im Browser öffnen. Die Seite fährt 89 Tests: gegen die echte
+`tests.php` im Browser öffnen. Die Seite fährt 91 Tests: gegen die echte
 Spiel-Engine (Sprunghöhen, jedes Bauteil, jede Todesursache, die sichere
 Startzone, Doppelsprung, Schild, Turbo, Gleitschirm), gegen die Serverregeln in PHP
-(Reihenfolge, Kartenziehen, Power-ups samt automatischem Einsatz, Abrissbirne, verdeckte Handkarten, Farb- und
-Tierwahl, Partyzeit, Punkte nur bei echtem Tod, wann Bauteile verschwinden, Matchende
-nach Runden samt Gleichstand, Grabsteine, Lobby, Karten-Parser) – und sie vergleicht
+(Reihenfolge, Kartenziehen, Power-ups samt automatischem Einsatz, Abrissbirne,
+verdeckte Handkarten, Farb- und Tierwahl, Tiernamen, Bauzeit, Partyzeit, Punkte nur
+bei echtem Tod, wann Bauteile verschwinden, Matchende nach Runden samt Gleichstand,
+Grabsteine, Lobby, Karten-Parser) – und sie vergleicht
 Bauregeln, Grabsteine sowie Bauteil- und Power-up-Katalog von JavaScript **mit denen
 von PHP**, damit Server und Client nicht auseinanderlaufen.
 

@@ -280,6 +280,35 @@ foreach ($room['lastRound']['entries'] as $entry) {
 $serverCheck('Echter Tod durch Schubs in eine Falle zählt weiterhin als Nachgeholfen',
     $texts === ['Nachgeholfen'], json_encode($texts));
 
+// Ohne eigenen Namen heisst man wie sein Tier.
+$room = Game::newRoom('TEST', 8, 'wiese');
+$t1 = Game::addPlayer($room, '', 'duck');
+$t2 = Game::addPlayer($room, '   ', 'duck');
+$t3 = Game::addPlayer($room, 'Max', 'frog');
+$namesBefore = [$room['players'][$t1]['name'], $room['players'][$t2]['name'], $room['players'][$t3]['name']];
+Game::setChar($room, $t2, 'racoon');
+Game::setChar($room, $t3, 'mule');
+$serverCheck('Ohne Namen heißt man wie sein Tier – auch nach dem Tierwechsel',
+    $namesBefore === ['Ente', 'Ente 2', 'Max'] && $room['players'][$t2]['name'] === 'Waschbär'
+    && $room['players'][$t3]['name'] === 'Max',
+    implode(', ', $namesBefore) . ' → ' . $room['players'][$t2]['name'] . ', ' . $room['players'][$t3]['name']);
+
+// 15 Sekunden Bauzeit pro Spieler, gestartet nach dem Spielautomaten.
+$room = $makeRoom(['Anna', 'Bo']);
+Game::startMatch($room, $tokenOf($room, 'Anna'));
+$first = Game::currentBuilder($room);
+$clockBefore = Game::turnClock($room);
+Game::turnRolled($room, $first);
+$left = (float) $room['turnEnds'] - microtime(true);
+$room['turnEnds'] = microtime(true) - Game::BUILD_GRACE - 0.1;
+Game::tick($room);
+$serverCheck('Bauzeit: 15 s nach dem Automaten, danach ist der Nächste dran',
+    $clockBefore['ready'] === false && abs($left - Game::BUILD_TURN) < 0.5
+    && Game::currentBuilder($room) !== $first && $room['players'][$first]['placed'] === true
+    && Game::turnClock($room)['ready'] === false,
+    'vorher bereit=' . var_export($clockBefore['ready'], true) . ', Restzeit ' . round($left, 2) . ' s, danach am Zug: '
+    . $room['players'][Game::currentBuilder($room)]['name']);
+
 // Partyzeit: der Server fuehrt die Uhr und beendet die Runde.
 $room = $makeRoom(['Anna', 'Bo']);
 Game::startMatch($room, $tokenOf($room, 'Anna'));

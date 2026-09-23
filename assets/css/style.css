@@ -987,3 +987,16 @@ span.lobby-preview { font-size: 60px; }
 /* Abrissbirne: Abbrechen-Knopf im Zielmodus */
 .card.cancel { border-color: rgba(255, 95, 109, 0.6); }
 .card.cancel .rot-icon { color: var(--bad); }
+
+/* Restzeit des Bauzugs neben dem Namen */
+.turn-secs {
+  display: inline-block;
+  min-width: 34px;
+  margin-left: 4px;
+  padding: 0 6px;
+  border-radius: 8px;
+  background: rgba(255, 255, 255, 0.1);
+  font-weight: 900;
+  text-align: center;
+}
+.turn-secs.low { background: rgba(255, 95, 109, 0.3); color: #ffb3ba; animation: pull-blink 0.5s steps(2, jump-none) infinite; }

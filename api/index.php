@@ -309,6 +309,18 @@ try {
             respond(['ok' => true, 'state' => Game::publicState($room, $token)]);
             // no break
 
+        case 'rolled':
+            // Spielautomat fertig - ab jetzt laufen die 15 Sekunden Bauzeit.
+            [$code, $token] = credentials($data);
+            $room = Rooms::mutate($code, function (array $room) use ($token, $data): array {
+                heartbeat($room, $token, $data);
+                Game::turnRolled($room, $token);
+
+                return $room;
+            });
+            respond(['ok' => true, 'state' => Game::publicState($room, $token)]);
+            // no break
+
         case 'skip':
             [$code, $token] = credentials($data);
             $room = Rooms::mutate($code, function (array $room) use ($token, $data): array {

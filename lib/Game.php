@@ -46,7 +46,17 @@ final class Game
     /** Nach dieser Zeit geht es aus der Punkteansicht automatisch weiter (Sek.). */
     public const SCORE_AUTO_NEXT = 20;
 
-    /** Nach dieser Zeit wird ein untaetiger Baumeister uebersprungen (Sek.). */
+    /**
+     * Bauzeit pro Spieler (Sek.). Die Uhr startet, sobald sein Spielautomat
+     * fertig ist (Aktion "rolled") - spaetestens aber BUILD_ROLL_MAX nach
+     * Zugbeginn, falls der Browser sich nicht meldet.
+     */
+    public const BUILD_TURN = 15;
+    public const BUILD_ROLL_MAX = 14;
+    /** Kurze Kulanz fuer Anfragen, die gerade unterwegs sind. */
+    public const BUILD_GRACE = 0.6;
+
+    /** Notbremse fuer Raeume ohne Zuguhr (aeltere Versionen). */
     public const BUILD_TIMEOUT = 120;
 
     /**
@@ -58,6 +68,9 @@ final class Game
 
     /** @var list<string> */
     public const CHARACTERS = ['duck', 'mule', 'racoon', 'frog'];
+
+    /** Namen der Tiere - wer keinen eigenen Namen eintraegt, heisst so. */
+    public const CHAR_NAMES = ['duck' => 'Ente', 'mule' => 'Maultier', 'racoon' => 'Waschbär', 'frog' => 'Frosch'];
 
     /**
      * Todesursachen, fuer die es einen Schuldigen geben kann. Zeitablauf,
@@ -121,11 +134,16 @@ final class Game
 
         $token = Rooms::newToken();
         $slot = count($room['order']);
+        $char = self::cleanChar($char, $slot);
+        $clean = self::cleanName($name, $slot);
+        // Kein eigener Name? Dann heisst man wie sein Tier.
+        $autoName = $clean === '';
 
         $room['players'][$token] = [
             'slot' => $slot,
-            'name' => self::cleanName($name, $slot),
-            'char' => self::cleanChar($char, $slot),
+            'name' => $autoName ? self::animalName($room, $char, $token) : $clean,
+            'autoName' => $autoName,
+            'char' => $char,
             'color' => self::freeColor($room, $slot),
             'score' => 0,
             'hand' => [],
@@ -214,6 +232,9 @@ final class Game
             throw new RuntimeException('Diese Figur gibt es nicht.');
         }
         $room['players'][$token]['char'] = $char;
+        if (!empty($room['players'][$token]['autoName'])) {
+            $room['players'][$token]['name'] = self::animalName($room, $char, $token);
+        }
         self::touch($room);
     }
 
@@ -572,6 +593,44 @@ final class Game
         return $removed;
     }
 
+    /**
+     * Der Spielautomat des Bauenden ist fertig: jetzt laufen seine 15 Sekunden.
+     *
+     * @param array<string, mixed> $room
+     */
+    public static function turnRolled(array &$room, string $token): void
+    {
+        if ($room['phase'] !== 'build' || self::currentBuilder($room) !== $token || !empty($room['turnReady'])) {
+            return;
+        }
+        $room['turnReady'] = true;
+        $room['turnEnds'] = min(
+            (float) ($room['turnEnds'] ?? PHP_INT_MAX),
+            microtime(true) + self::BUILD_TURN
+        );
+        self::touch($room);
+    }
+
+    /**
+     * Uhr des laufenden Bauzugs.
+     *
+     * @param array<string, mixed> $room
+     * @return array{ready:bool, remaining:float, limit:int}|null
+     */
+    public static function turnClock(array $room): ?array
+    {
+        if ($room['phase'] !== 'build' || !isset($room['turnEnds'])) {
+            return null;
+        }
+        $remaining = max(0.0, (float) $room['turnEnds'] - microtime(true));
+
+        return [
+            'ready' => !empty($room['turnReady']),
+            'remaining' => round(empty($room['turnReady']) ? min($remaining, self::BUILD_TURN) : $remaining, 2),
+            'limit' => self::BUILD_TURN,
+        ];
+    }
+
     /** @param array<string, mixed> $room */
     public static function skipBuild(array &$room, string $token): void
     {
@@ -619,6 +678,11 @@ final class Game
         if ($token === null || !isset($room['players'][$token])) {
             return;
         }
+        // Zuguhr: erst laeuft der Spielautomat, dann BUILD_TURN Sekunden Bauzeit.
+        $now = microtime(true);
+        $room['turnReady'] = false;
+        $room['turnEnds'] = $now + self::BUILD_ROLL_MAX + self::BUILD_TURN;
+
         $player = &$room['players'][$token];
         $keep = [];
         foreach ($player['hand'] as $card) {
@@ -1028,9 +1092,14 @@ final class Game
         if ($room['phase'] === 'build') {
             $builder = self::currentBuilder($room);
             $builderPlayer = $builder !== null ? $room['players'][$builder] : null;
-            $timedOut = $now - (int) $room['phaseStarted'] > self::BUILD_TIMEOUT;
+            $timedOut = isset($room['turnEnds'])
+                ? microtime(true) > (float) $room['turnEnds'] + self::BUILD_GRACE
+                : $now - (int) $room['phaseStarted'] > self::BUILD_TIMEOUT;
             if ($builderPlayer === null || !self::isConnected($builderPlayer) || $timedOut) {
                 if ($builder !== null) {
+                    if ($timedOut) {
+                        self::log($room, self::nameOf($room, $builder) . ' war zu langsam.');
+                    }
                     $room['players'][$builder]['placed'] = true;
                     $room['players'][$builder]['places'] = 0;
                     $room['players'][$builder]['hand'] = [];
@@ -1301,6 +1370,7 @@ final class Game
             ),
             'buildView' => $room['phase'] === 'build' ? ($room['buildView'] ?? null) : null,
             'party' => $room['phase'] === 'party' ? self::partyClock($room) : null,
+            'turnClock' => self::turnClock($room),
             'lastRound' => $room['lastRound'],
             'winner' => $room['winner'],
             'version' => (int) $room['version'],
@@ -1359,9 +1429,26 @@ final class Game
             $clean = preg_replace('/\s+/', ' ', $name);
         }
 
-        $name = self::truncate(trim((string) $clean), 14);
-        if ($name === '') {
-            $name = 'Spieler ' . ($slot + 1);
+        return self::truncate(trim((string) $clean), 14);
+    }
+
+    /**
+     * Name nach dem Tier - "Ente", bei Gleichnamigen "Ente 2", "Ente 3" ...
+     *
+     * @param array<string, mixed> $room
+     */
+    public static function animalName(array $room, string $char, string $token): string
+    {
+        $base = self::CHAR_NAMES[$char] ?? 'Spieler';
+        $taken = [];
+        foreach ($room['players'] as $other => $player) {
+            if ($other !== $token) {
+                $taken[] = (string) $player['name'];
+            }
+        }
+        $name = $base;
+        for ($n = 2; in_array($name, $taken, true); $n++) {
+            $name = $base . ' ' . $n;
         }
 
         return $name;

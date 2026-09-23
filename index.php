@@ -109,7 +109,7 @@ function levelPicker(string $inputId, string $inputName, string $selected, array
       <canvas class="seat-canvas" width="54" height="54" data-slot="0" id="online-avatar"></canvas>
       <div>
         <label for="online-name">Dein Name</label>
-        <input type="text" id="online-name" maxlength="14" value="Spieler" autocomplete="off">
+        <input type="text" id="online-name" maxlength="14" value="" placeholder="leer lassen = Name deines Tiers" autocomplete="off">
         <div class="chars" data-charpick="online">
           <?php $ci = 0; foreach ($characters as $char): ?>
             <button type="button" data-char="<?= htmlspecialchars($char, ENT_QUOTES) ?>" class="<?= $ci === 0 ? 'on' : '' ?>">
@@ -157,7 +157,7 @@ function levelPicker(string $inputId, string $inputName, string $selected, array
     <h2>Regeln</h2>
     <ol class="rules">
       <li><strong>Jedes Level ist ohne ein einziges Bauteil zu schaffen.</strong> Alles, was gebaut wird, ist ein Hindernis &ndash; es gibt keine Kletterhilfen.</li>
-      <li><strong>Bauphase:</strong> Der Reihe nach setzt jeder <strong>ein Bauteil</strong> aus seiner Hand. Die Reihenfolge richtet sich nach dem Punktestand: <strong>wer vorne liegt, baut zuerst</strong> &ndash; wer hinten liegt, sieht alles und hat das letzte Wort. Gleichstand entscheidet das Los.</li>
+      <li><strong>Bauphase:</strong> Der Reihe nach setzt jeder <strong>ein Bauteil</strong> aus seiner Hand &ndash; nach dem Spielautomaten hat jeder <strong>15 Sekunden</strong> Zeit. Die Reihenfolge richtet sich nach dem Punktestand: <strong>wer vorne liegt, baut zuerst</strong> &ndash; wer hinten liegt, sieht alles und hat das letzte Wort. Gleichstand entscheidet das Los.</li>
       <li><strong>Bauteile bleiben liegen.</strong> Selbst l&ouml;schen kann man nichts. Ein Bauteil verschwindet nur, wenn es in einer Runde <strong>alle Spieler</strong> erwischt hat &ndash; oder wenn jemand die <strong>Abrissbirne</strong> (Power-up) darauf ansetzt.</li>
       <li><strong>Partyphase:</strong> Alle starten gleichzeitig und versuchen, die Fahne zu erreichen. Wer stirbt, schaut den Rest der Runde zu.</li>
       <li><strong>Punkte:</strong> Ziel erreicht <b>+1</b> &middot; erster im Ziel <b>+1</b> extra &middot;

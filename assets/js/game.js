@@ -16,7 +16,7 @@
   // Den Hebel zieht man selbst (Klick oder Leertaste); wer es vergisst,
   // dem hilft der Automat nach ROLL_AUTO Sekunden. Die Walzen starten
   // ROLL_SPIN nach dem Ziehen.
-  var ROLL_AUTO = 15;
+  var ROLL_AUTO = 6;
   var ROLL_SPIN = 0.25;
   var PULL_KEYS = ['Space', 'Enter', 'ArrowDown', 'KeyS'];
   var ROLL_FIRST = 1.1;
@@ -66,6 +66,9 @@
     // Die Uhr fuehrt der Server (Game::partyClock), hier laeuft sie nur
     // zwischen zwei Abgleichen weiter.
     party: { countdown: 0, time: 0, remaining: 60, limit: 60, started: false, reported: false, lastBeep: -1 },
+    // Bauzeit des aktuellen Zugs (Game::turnClock) - laeuft erst, wenn der
+    // Spielautomat des Bauenden fertig ist.
+    turn: { slot: null, ready: false, remaining: 15, limit: 15, lastBeep: -1 },
 
     net: null,
     server: null,
@@ -646,6 +649,9 @@
       this.syncColors(state);
       this.syncLevel(state);
       this.syncPlayers(state);
+      var myTurnBefore = !!previous && previous.phase === 'build' && previous.turnSlot === this.mySlot;
+      var ranOut = myTurnBefore && this.turn.ready && this.turn.remaining <= 0.4;
+      this.syncTurnClock(state);
 
       var phaseChanged = !previous || previous.phase !== state.phase ||
         (previous.round !== state.round && state.phase === 'build');
@@ -668,7 +674,8 @@
         var builder = this.activeBuilder();
         if (builder && (phaseChanged || previous.turnSlot !== state.turnSlot)) {
           this.build.deleting = false;
-          this.setBanner(builder.slot === this.mySlot ? 'Du baust!' : (builder.name + ' baut …'));
+          this.setBanner(ranOut ? 'Zeit um – ' + builder.name + ' ist dran'
+            : builder.slot === this.mySlot ? 'Du baust!' : (builder.name + ' baut …'));
           if (builder.slot === this.mySlot) {
             // Ein Power-up, das sich selbst eingesetzt hat, rollt als eigene Walze mit.
             this.startRoll((builder.hand || []).concat(builder.bonus ? [builder.bonus] : []));
@@ -838,18 +845,14 @@
         return;
       }
 
-      var name = '<strong style="color:' + builder.color + '">' + UDM.escapeHtml(builder.name) + '</strong>';
       if (builder.slot !== this.mySlot) {
         // Zuschauer sehen im Level, wo gebaut wird - aber nicht die Hand.
-        this.dom['turn-info'].innerHTML = name + ' baut gerade …';
+        this.renderTurnInfo();
         this.dom.hand.innerHTML = '<div class="spectate-note">Du schaust zu, wo gebaut wird.</div>';
         return;
       }
 
-      var places = this.placesLeft(builder);
-      var quota = '<span class="quota"><b>' + places + '</b> Bauteil' + (places === 1 ? '' : 'e') + ' übrig' +
-        ((builder.buffs || []).length ? ' · ' + this.buffBadges(builder) : '') + '</span>';
-      this.dom['turn-info'].innerHTML = name + ' ist am Zug<br>' + quota;
+      this.renderTurnInfo();
 
       var hand = builder.hand || [];
       if (this.roll) {
@@ -912,6 +915,7 @@
     startRoll: function (hand) {
       if (!hand || !hand.length) {
         this.stopRoll();
+        this.reportRolled();
         return;
       }
       var pool = Object.keys(this.cfg.cards).concat(Object.keys(this.cfg.powerups || {}));
@@ -936,6 +940,66 @@
       };
       this.buildSlot(hand.length);
       this.renderHand();
+    },
+
+    /** Dem Server melden: Automat fertig, jetzt laufen die 15 Sekunden. */
+    reportRolled: function () {
+      if (!this.isMyTurn()) { return; }
+      var self = this;
+      this.net.call('rolled').then(function (data) { self.applyServerState(data.state); }).catch(function () {});
+    },
+
+    /** Zuguhr vom Server uebernehmen (nur bei merklicher Abweichung). */
+    syncTurnClock: function (state) {
+      var clock = state.turnClock;
+      var turn = this.turn;
+      if (!clock || state.phase !== 'build') {
+        turn.slot = null;
+        turn.ready = false;
+        return;
+      }
+      var fresh = turn.slot !== state.turnSlot || turn.ready !== clock.ready;
+      turn.slot = state.turnSlot;
+      turn.ready = clock.ready;
+      turn.limit = clock.limit;
+      if (fresh || Math.abs(clock.remaining - turn.remaining) > 0.3) {
+        turn.remaining = clock.remaining;
+      }
+      if (fresh) { turn.lastBeep = -1; }
+    },
+
+    /** Zuguhr zwischen zwei Abgleichen weiterlaufen lassen. */
+    stepTurnClock: function (dt) {
+      var turn = this.turn;
+      if (!turn.ready || turn.slot === null) { return; }
+      var before = turn.remaining;
+      turn.remaining = Math.max(0, turn.remaining - dt);
+      // Die letzten Sekunden ticken - nur fuer den, der gerade baut.
+      var second = Math.ceil(turn.remaining);
+      if (this.isMyTurn() && turn.remaining > 0 && second <= FINAL_SECONDS && second !== turn.lastBeep) {
+        turn.lastBeep = second;
+        UDM.Audio.tick();
+      }
+      if (Math.ceil(before) !== second) { this.renderTurnInfo(); }
+    },
+
+    /** Name des Bauenden und seine Restzeit unten links. */
+    renderTurnInfo: function () {
+      var builder = this.activeBuilder();
+      if (this.phase !== 'build' || !builder) { return; }
+      var name = '<strong style="color:' + builder.color + '">' + UDM.escapeHtml(builder.name) + '</strong>';
+      var clock = this.turn.ready
+        ? ' <span class="turn-secs' + (this.turn.remaining <= FINAL_SECONDS ? ' low' : '') + '">' +
+          Math.ceil(this.turn.remaining) + ' s</span>'
+        : '';
+      if (builder.slot !== this.mySlot) {
+        this.dom['turn-info'].innerHTML = name + (this.turn.ready ? ' baut gerade …' : ' dreht am Automaten …') + clock;
+        return;
+      }
+      var places = this.placesLeft(builder);
+      var quota = '<span class="quota"><b>' + places + '</b> Bauteil' + (places === 1 ? '' : 'e') + ' übrig' +
+        ((builder.buffs || []).length ? ' · ' + this.buffBadges(builder) : '') + '</span>';
+      this.dom['turn-info'].innerHTML = name + ' ist am Zug' + clock + '<br>' + quota;
     },
 
     /** Automat beenden - mit kurzem Ausblenden, wenn er gerade zu sehen ist. */
@@ -1171,6 +1235,7 @@
         // Alles steht - der Automat verschwindet, jetzt wird gebaut.
         var bonus = roll.reels.filter(function (r) { return this.isPowerUp(r.id); }, this)[0];
         this.stopRoll(true);
+        this.reportRolled();
         this.updateHud();
         if (bonus && bonus.id === 'pu_remove') {
           this.setBanner('Abrissbirne auf der Hand – anklicken und ansetzen', 2.6);
@@ -1533,7 +1598,8 @@
         '<ol class="rules">' +
         '<li><b>Jedes Level ist ohne ein einziges Bauteil zu schaffen.</b> ' +
         'Alles, was gebaut wird, ist ein Hindernis – keine Hilfe.</li>' +
-        '<li><b>Bauphase:</b> Der Reihe nach setzt jeder <b>ein Bauteil</b>. ' +
+        '<li><b>Bauphase:</b> Der Reihe nach setzt jeder <b>ein Bauteil</b> – nach dem Spielautomaten ' +
+        'bleiben dafür <b>15 Sekunden</b>. ' +
         'Wer vorne liegt, baut zuerst – wer hinten liegt, hat das letzte Wort. ' +
         'Die anderen sehen, wo gebaut wird, aber nicht deine Karten.</li>' +
         '<li><b>Partyphase:</b> Alle rennen gleichzeitig los und versuchen, die Fahne zu erreichen. ' +
@@ -1650,6 +1716,7 @@
       if (this.phase !== 'build' && this.roll) { this.stopRoll(); }
 
       if (this.phase === 'build') {
+        this.stepTurnClock(dt);
         this.updateRoll(dt);
         // Nur einmal pro Frame: Klicks und Tastendruecke sind Flanken.
         this.stepBuild();
@@ -1731,6 +1798,11 @@
         var pct = UDM.clamp(this.party.remaining / this.party.limit, 0, 1) * 100;
         this.dom['timer-fill'].style.width = pct + '%';
         this.dom['timer-fill'].classList.toggle('warn', this.party.remaining < 10);
+      } else if (this.phase === 'build' && this.turn.ready && this.turn.slot !== null) {
+        // Bauzeit des aktuellen Spielers - alle sehen denselben Balken.
+        this.dom.timer.classList.remove('hidden');
+        this.dom['timer-fill'].style.width = UDM.clamp(this.turn.remaining / this.turn.limit, 0, 1) * 100 + '%';
+        this.dom['timer-fill'].classList.toggle('warn', this.turn.remaining < 5);
       } else {
         this.dom.timer.classList.add('hidden');
       }
@@ -1743,7 +1815,16 @@
       var pulse = 0;
       var final = false;
 
-      if (this.phase === 'party') {
+      if (this.phase === 'build' && this.isMyTurn() && this.turn.ready && !this.roll) {
+        if (this.turn.remaining <= 0) {
+          text = 'ZEIT!';
+          final = true;
+        } else if (this.turn.remaining <= FINAL_SECONDS) {
+          text = String(Math.ceil(this.turn.remaining));
+          pulse = this.turn.remaining % 1;
+          final = true;
+        }
+      } else if (this.phase === 'party') {
         if (this.party.countdown > 0) {
           text = String(Math.ceil(this.party.countdown));
           pulse = this.party.countdown % 1;
