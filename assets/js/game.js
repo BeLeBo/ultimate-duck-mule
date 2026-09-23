@@ -13,8 +13,12 @@
   // Spielautomat zu Beginn des eigenen Bauzugs (Sekunden): Hebel geht runter,
   // Walzen laufen an, die erste steht nach ROLL_FIRST, jede weitere
   // ROLL_STEP spaeter; danach bleibt das Ergebnis ROLL_HOLD sichtbar.
-  var ROLL_PULL = 0.35;
-  var ROLL_SPIN = 0.6;
+  // Den Hebel zieht man selbst (Klick oder Leertaste); wer es vergisst,
+  // dem hilft der Automat nach ROLL_AUTO Sekunden. Die Walzen starten
+  // ROLL_SPIN nach dem Ziehen.
+  var ROLL_AUTO = 15;
+  var ROLL_SPIN = 0.25;
+  var PULL_KEYS = ['Space', 'Enter', 'ArrowDown', 'KeyS'];
   var ROLL_FIRST = 1.1;
   var ROLL_STEP = 0.4;
   var ROLL_HOLD = 0.8;
@@ -113,6 +117,11 @@
         if (!el || el.disabled) { return; }
         e.preventDefault();
         self.onOverlayAction(el.getAttribute('data-action'), el);
+      });
+
+      // Spielautomat: Hebel (oder das PULL-Schild) anklicken.
+      this.dom.slot.addEventListener('click', function (e) {
+        if (e.target.closest && e.target.closest('.slot-lever, .pull-sign')) { self.pullLever(); }
       });
 
       this.dom.hand.addEventListener('click', function (e) {
@@ -821,7 +830,8 @@
 
       var hand = builder.hand || [];
       if (this.roll) {
-        this.dom.hand.innerHTML = '<div class="spectate-note">Der Automat läuft …</div>';
+        this.dom.hand.innerHTML = '<div class="spectate-note">' +
+          (this.roll.pulled ? 'Der Automat läuft …' : 'Zieh am Hebel!') + '</div>';
         return;
       }
       var selectedIndex = this.selectedIndex();
@@ -881,6 +891,7 @@
       this.roll = {
         time: 0,
         pulled: false,
+        pullAt: 0,
         finishing: false,
         reels: hand.map(function (id, i) {
           var dur = ROLL_FIRST + i * ROLL_STEP;
@@ -932,11 +943,35 @@
         '<div class="slot-title">★ Bauteil-Automat ★</div>' +
         '<div class="slot-window">' + reels + '<div class="slot-payline"></div></div>' +
         '<div class="slot-foot">Viel Glück!</div>' +
-        '<div class="slot-lever"><div class="lever-base"></div>' +
+        '<div class="slot-lever" title="Hebel ziehen"><div class="lever-base"></div>' +
         '<div class="lever-arm"><div class="lever-knob"></div></div></div>' +
+        '<div class="pull-sign" title="Hebel ziehen">' +
+        '<span class="pull-arrows"><i>◀</i><i>◀</i><i>◀</i></span>' +
+        '<div class="pull-board">' + this.bulbs(7) + '<b>PULL!</b>' + this.bulbs(7) + '</div>' +
+        '</div>' +
         '</div>';
       slot.className = 'slot';
       this.paintSlot();
+    },
+
+    /** Eine Reihe Gluehbirnen fuer das PULL-Schild (blinken abwechselnd). */
+    bulbs: function (count) {
+      var html = '<span class="bulbs">';
+      for (var i = 0; i < count; i++) { html += '<i class="' + (i % 2 ? 'odd' : 'even') + '"></i>'; }
+      return html + '</span>';
+    },
+
+    /** Hebel ziehen: Klack, Schild weg, gleich laufen die Walzen an. */
+    pullLever: function () {
+      var roll = this.roll;
+      if (!roll || roll.pulled) { return; }
+      roll.pulled = true;
+      roll.pullAt = roll.time;
+      this.dom.slot.classList.add('pulled');
+      var lever = this.dom.slot.querySelector('.slot-lever');
+      if (lever) { lever.classList.add('pulled'); }
+      UDM.Audio.lever();
+      this.updateHud();
     },
 
     /** Symbol einer Karte, einmal gezeichnet und dann wiederverwendet. */
@@ -962,14 +997,11 @@
       }
 
       roll.time += dt;
-      if (!roll.pulled && roll.time >= ROLL_PULL) {
-        roll.pulled = true;
-        var lever = this.dom.slot.querySelector('.slot-lever');
-        if (lever) { lever.classList.add('pulled'); }
-        UDM.Audio.lever();
+      if (!roll.pulled && (UDM.Input.wasPressed(PULL_KEYS) || roll.time >= ROLL_AUTO)) {
+        this.pullLever();
       }
 
-      var t = roll.time - ROLL_SPIN;
+      var t = roll.pulled ? roll.time - roll.pullAt - ROLL_SPIN : 0;
       var ticked = false;
       var lastLanding = 0;
       var allLanded = true;
@@ -1084,8 +1116,10 @@
         html = me && me.placedThisRound
           ? '<span>Du hast schon gebaut – jetzt heißt es zuschauen.</span>'
           : '<span>Du baust als <b>' + pos + '.</b> – bis dahin zuschauen.</span>';
+      } else if (this.phase === 'build' && this.roll && !this.roll.pulled) {
+        html = '<span><b>Hebel anklicken</b> oder <b>Leertaste</b> – deine Karten werden gezogen.</span>';
       } else if (this.phase === 'build' && this.roll) {
-        html = '<span>Gleich geht es los – deine Karten werden gezogen.</span>';
+        html = '<span>Die Walzen drehen – gleich geht es los.</span>';
       } else if (this.phase === 'build' && this.build.deleting) {
         html = '<span><b>R</b> waagerecht / senkrecht</span><span><b>Klick</b> abreißen</span>' +
           '<span><b>Rechtsklick</b> / <b>Esc</b> abbrechen</span>';
